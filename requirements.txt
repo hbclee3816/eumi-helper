@@ -1,0 +1,7 @@
+google-genai
+pillow
+python-dotenv
+streamlit
+fastapi
+uvicorn
+httpx
