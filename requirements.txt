@@ -1,0 +1,6 @@
+google-genai
+pillow
+python-dotenv
+streamlit
+supabase
+pandas
