@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 from dotenv import load_dotenv
 from google import genai
@@ -99,6 +100,79 @@ hr { border: none; border-top: 2px solid #F0E8E4; margin: 1.7rem 0; }
     unsafe_allow_html=True,
 )
 
+
+def install_phone_input_guard() -> None:
+    """휴대폰 입력칸에서 숫자만 입력되고, 11자리 숫자를 010-0000-0000 형태로 즉시 표시합니다."""
+    components.html(
+        """
+<script>
+(function () {
+  function digitsOnly(value) {
+    return (value || "").replace(/\D/g, "").slice(0, 11);
+  }
+
+  function formatPhone(value) {
+    const d = digitsOnly(value);
+    if (d.length <= 3) return d;
+    if (d.length <= 7) return d.slice(0, 3) + "-" + d.slice(3);
+    return d.slice(0, 3) + "-" + d.slice(3, 7) + "-" + d.slice(7, 11);
+  }
+
+  function bindPhoneInputs() {
+    const doc = window.parent.document;
+    const inputs = Array.from(doc.querySelectorAll('input[placeholder="010-0000-0000"]'));
+
+    inputs.forEach(function (input) {
+      if (input.dataset.eumiPhoneGuard === "1") return;
+      input.dataset.eumiPhoneGuard = "1";
+      input.setAttribute("inputmode", "numeric");
+      input.setAttribute("autocomplete", "tel");
+      input.setAttribute("maxlength", "13");
+
+      input.addEventListener("beforeinput", function (event) {
+        if (event.inputType && event.inputType.startsWith("delete")) return;
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        const data = event.data || "";
+        if (data && /\D/.test(data)) {
+          event.preventDefault();
+        }
+        const currentDigits = digitsOnly(input.value);
+        if (data && /\d/.test(data) && currentDigits.length >= 11) {
+          event.preventDefault();
+        }
+      });
+
+      input.addEventListener("paste", function (event) {
+        event.preventDefault();
+        const pasted = (event.clipboardData || window.clipboardData).getData("text");
+        const formatted = formatPhone(pasted);
+        input.value = formatted;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+
+      input.addEventListener("input", function () {
+        const formatted = formatPhone(input.value);
+        if (input.value !== formatted) {
+          input.value = formatted;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      });
+
+      input.value = formatPhone(input.value);
+    });
+  }
+
+  bindPhoneInputs();
+  const timer = setInterval(bindPhoneInputs, 500);
+  setTimeout(function () { clearInterval(timer); }, 10000);
+})();
+</script>
+        """,
+        height=0,
+        width=0,
+    )
+
 # =========================================================
 # 세션
 # =========================================================
@@ -135,7 +209,8 @@ def phone_input(label: str, key: str) -> str:
         label,
         key=key,
         placeholder="010-0000-0000",
-        help="숫자 11자리까지만 입력하세요. - 는 자동으로 정리됩니다.",
+        help="숫자만 11자리까지 입력됩니다. - 는 자동으로 들어갑니다.",
+        max_chars=13,
         on_change=normalize_phone_input,
         args=(key,),
     )
@@ -389,6 +464,7 @@ def logout() -> None:
 # 로그인 화면
 # =========================================================
 def show_auth() -> None:
+    install_phone_input_guard()
     st.markdown(
         """
 <div class="title-area">
