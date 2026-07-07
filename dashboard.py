@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from supabase import create_client
 
@@ -111,16 +112,101 @@ def clean_phone_input(key: str):
     st.session_state[key] = format_phone_digits(digits)
 
 
+def inject_phone_input_guard():
+    """
+    Streamlit 기본 입력창에 휴대폰 번호 전용 입력 제한을 입힙니다.
+    - 키보드 입력: 숫자만 허용
+    - 실제 숫자: 11자리까지만 허용
+    - 화면 표시: 010-1234-5678 형태로 자동 하이픈 처리
+    """
+    components.html(
+        """
+<script>
+(function () {
+  function onlyDigits(value) {
+    return (value || '').replace(/\D/g, '').slice(0, 11);
+  }
+
+  function formatPhone(value) {
+    const d = onlyDigits(value);
+    if (d.length <= 3) return d;
+    if (d.length <= 7) return d.slice(0, 3) + '-' + d.slice(3);
+    if (d.length === 10) return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
+    return d.slice(0, 3) + '-' + d.slice(3, 7) + '-' + d.slice(7);
+  }
+
+  function setNativeValue(input, value) {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function attach(input) {
+    if (!input || input.dataset.eumiPhoneGuard === '1') return;
+    input.dataset.eumiPhoneGuard = '1';
+    input.setAttribute('inputmode', 'numeric');
+    input.setAttribute('pattern', '[0-9]*');
+    input.setAttribute('autocomplete', 'tel');
+    input.setAttribute('maxlength', '13'); // 화면에는 하이픈 2개가 자동으로 들어가므로 표시 길이는 13입니다. 숫자는 아래 로직에서 11자리로 제한합니다.
+
+    input.addEventListener('beforeinput', function (e) {
+      if (e.inputType && e.inputType.indexOf('delete') === 0) return;
+      if (e.data && /\D/.test(e.data)) {
+        e.preventDefault();
+        return;
+      }
+      const selected = Math.max(0, (input.selectionEnd || 0) - (input.selectionStart || 0));
+      const selectedDigits = (input.value.slice(input.selectionStart || 0, input.selectionEnd || 0).match(/\d/g) || []).length;
+      const currentDigits = onlyDigits(input.value).length;
+      const incomingDigits = (e.data || '').replace(/\D/g, '').length;
+      if (currentDigits - selectedDigits + incomingDigits > 11) {
+        e.preventDefault();
+      }
+    });
+
+    input.addEventListener('paste', function (e) {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text');
+      setNativeValue(input, formatPhone(text));
+    });
+
+    input.addEventListener('input', function () {
+      const formatted = formatPhone(input.value);
+      if (input.value !== formatted) {
+        setNativeValue(input, formatted);
+      }
+    });
+
+    const formatted = formatPhone(input.value);
+    if (input.value !== formatted) setNativeValue(input, formatted);
+  }
+
+  function scan() {
+    const doc = window.parent.document;
+    doc.querySelectorAll('input[aria-label="휴대폰 번호"]').forEach(attach);
+  }
+
+  scan();
+  const timer = setInterval(scan, 400);
+  setTimeout(function () { clearInterval(timer); }, 15000);
+})();
+</script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
 def phone_text_input(label: str, key: str, placeholder: str = "010-1234-5678") -> str:
-    """휴대폰 번호 전용 입력창: 숫자만 11자리까지 사용하고 하이픈은 자동 표시합니다."""
+    """휴대폰 번호 전용 입력창: 숫자 11자리까지만 쓰고 하이픈은 자동 표시합니다."""
     return st.text_input(
         label,
         key=key,
         placeholder=placeholder,
-        max_chars=13,
         on_change=clean_phone_input,
         args=(key,),
-        help="숫자만 입력하세요. 하이픈(-)은 자동으로 붙습니다.",
+        help="숫자 11자리까지만 입력하세요. 하이픈(-)은 자동으로 붙습니다.",
     )
 
 def is_valid_phone(phone_digits: str) -> bool:
@@ -169,6 +255,7 @@ st.markdown(
 # 로그인 / 회원가입
 # =========================================================
 def show_login():
+    inject_phone_input_guard()
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         tab1, tab2 = st.tabs(["🔐 로그인", "📝 회원가입"])
