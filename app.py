@@ -1,12 +1,7 @@
-import hashlib
-import json
-import os
-import re
-import tempfile
-import uuid
+
+import hashlib, json, os, re, tempfile
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-
 import streamlit as st
 import streamlit.components.v1 as components
 from PIL import Image
@@ -15,663 +10,257 @@ from google import genai
 from supabase import create_client
 
 load_dotenv()
-
-# =========================================================
-# 기본 설정
-# =========================================================
-st.set_page_config(
-    page_title="이음이 — 부모님용 디지털 도우미",
-    page_icon="🔗",
-    layout="centered",
-)
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-AUTH_SECRET = os.getenv("AUTH_SECRET", "eumi-dev-secret-change-me")
-APP_URL = os.getenv("APP_URL", "")
-
-SUPABASE_APP_KEY = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY
-
+GEMINI_API_KEY=os.getenv('GEMINI_API_KEY','')
+SUPABASE_URL=os.getenv('SUPABASE_URL','')
+SUPABASE_KEY=os.getenv('SUPABASE_KEY','')
+SUPABASE_SERVICE_ROLE_KEY=os.getenv('SUPABASE_SERVICE_ROLE_KEY','')
+AUTH_SECRET=os.getenv('AUTH_SECRET','eumi-dev-secret-change-me')
+SUPABASE_APP_KEY=SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY
 if not SUPABASE_URL or not SUPABASE_APP_KEY:
-    st.error("⚠️ SUPABASE_URL과 SUPABASE_KEY를 Streamlit Secrets에 넣어주세요.")
+    st.error('⚠️ SUPABASE_URL과 SUPABASE_KEY를 Streamlit Secrets에 넣어주세요.')
     st.stop()
+supabase=create_client(SUPABASE_URL, SUPABASE_APP_KEY)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_APP_KEY)
-
-# =========================================================
-# 디자인
-# =========================================================
-st.markdown(
-    """
+def apply_style(title, sub):
+    st.markdown(f'''
 <style>
-html, body, [class*="css"] { font-size: 24px !important; }
-[data-testid="stAppViewContainer"] { background-color: #FFF8F5; }
-[data-testid="stHeader"] { background-color: #FFF8F5; }
-[data-testid="stMarkdownContainer"], [data-testid="stCaptionContainer"], p, li, label, div { line-height: 1.7; }
-.title-area { text-align: center; padding: 1.6rem 0 1rem 0; }
-.title-main { font-size: 4.6rem; font-weight: 900; color: #E8543A; line-height: 1.1; }
-.title-sub { font-size: 2rem; color: #666; margin-top: 0.8rem; line-height: 1.7; }
-.guide-card {
-    background: #FFF0EC; border-radius: 18px; padding: 1.7rem 1.8rem;
-    font-size: 1.55rem; color: #333; margin: 1rem 0 1.2rem 0; line-height: 1.95;
-}
-.code-card {
-    background: #ffffff; border: 3px solid #F0C4B8; border-radius: 22px;
-    padding: 1.6rem 1.6rem; margin: 1.1rem 0; text-align: center;
-}
-.code-big { font-size: 2.9rem; font-weight: 900; color: #E8543A; letter-spacing: 0.08em; }
-.answer-card {
-    background: #ffffff; border-left: 10px solid #E8543A; border-radius: 0 22px 22px 0;
-    padding: 1.9rem 2.1rem; font-size: 1.7rem; line-height: 2.0; color: #222;
-    margin-top: 1rem; box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-}
-.folder-card {
-    background:#fff; border:2px solid #F0D8D0; border-radius:16px; padding:1.2rem 1.4rem;
-    margin:0.9rem 0; font-size:1.4rem; line-height:1.9;
-}
-.small-note { color:#666; font-size:1.15rem; line-height:1.8; }
-[data-testid="stFileUploader"] {
-    background: #fff; border-radius: 18px; padding: 1.5rem; border: 3px dashed #F0C4B8;
-}
-[data-testid="stFileUploader"] label,
-[data-testid="stFileUploader"] span,
-[data-testid="stFileUploader"] p,
-[data-testid="stFileUploader"] small { font-size: 1.35rem !important; }
-.stButton > button {
-    background-color: #E8543A !important; color: white !important;
-    font-size: 1.55rem !important; font-weight: 800 !important;
-    padding: 1rem 1.5rem !important; border-radius: 18px !important;
-    border: none !important; width: 100% !important; min-height: 4.2rem !important;
-}
-.stButton > button:hover { background-color: #C9422A !important; }
-.stTextInput > div > input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
-    font-size: 1.35rem !important; border-radius: 14px !important; min-height: 3.4rem !important;
-}
-label, .stTextInput label, .stTextArea label, .stSelectbox label { font-size: 1.35rem !important; font-weight: 700 !important; }
-button[data-baseweb="tab"] { font-size: 1.35rem !important; font-weight: 800 !important; padding-top: 0.6rem !important; padding-bottom: 0.8rem !important; }
-[data-testid="stAlertContainer"] p, [data-testid="stAlertContainer"] div { font-size: 1.3rem !important; }
-h1 { font-size: 3rem !important; }
-h2, h3 { font-size: 2rem !important; }
-hr { border: none; border-top: 2px solid #F0E8E4; margin: 1.7rem 0; }
+html, body, [class*="css"] {{ font-size:24px !important; }}
+[data-testid="stAppViewContainer"], [data-testid="stHeader"] {{ background:#FFF8F5; }}
+[data-testid="stMarkdownContainer"], p, li, label, div {{ line-height:1.75; }}
+.title-area {{ text-align:center; padding:1.4rem 0 1rem; }}
+.title-main {{ font-size:4.2rem; font-weight:900; color:#E8543A; line-height:1.1; }}
+.title-sub {{ font-size:1.8rem; color:#666; margin-top:.7rem; }}
+.guide-card,.folder-card,.log-card,.metric-card {{ background:#fff; border:2px solid #F0D8D0; border-radius:18px; padding:1.2rem 1.4rem; margin:.9rem 0; font-size:1.28rem; line-height:1.9; }}
+.guide-card {{ background:#FFF0EC; }}
+.answer-card {{ background:#fff; border-left:10px solid #E8543A; border-radius:0 22px 22px 0; padding:1.8rem 2rem; font-size:1.6rem; line-height:2; box-shadow:0 4px 20px rgba(0,0,0,.08); }}
+.small-note {{ color:#666; font-size:1.15rem; }}
+.stButton > button {{ background:#E8543A !important; color:#fff !important; font-size:1.35rem !important; font-weight:800 !important; border-radius:16px !important; min-height:4rem !important; width:100% !important; border:0 !important; }}
+.stTextInput > div > input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {{ font-size:1.3rem !important; border-radius:14px !important; min-height:3.3rem !important; }}
+label, .stTextInput label, .stTextArea label, .stSelectbox label {{ font-size:1.25rem !important; font-weight:700 !important; }}
+button[data-baseweb="tab"] {{ font-size:1.25rem !important; font-weight:800 !important; }}
+[data-testid="stFileUploader"] {{ background:#fff; border-radius:18px; padding:1.5rem; border:3px dashed #F0C4B8; }}
+[data-testid="stFileUploader"] * {{ font-size:1.25rem !important; }}
 </style>
-""",
-    unsafe_allow_html=True,
-)
+<div class="title-area"><div class="title-main">🔗 {title}</div><div class="title-sub">{sub}</div></div>
+''', unsafe_allow_html=True)
 
-
-def install_phone_input_guard() -> None:
-    """휴대폰 입력칸에서 숫자만 입력되고, 11자리 숫자를 010-0000-0000 형태로 즉시 표시합니다."""
-    components.html(
-        """
+def install_phone_input_guard():
+    components.html(r'''
 <script>
-(function () {
-  function digitsOnly(value) {
-    return (value || "").replace(/\D/g, "").slice(0, 11);
-  }
-
-  function formatPhone(value) {
-    const d = digitsOnly(value);
-    if (d.length <= 3) return d;
-    if (d.length <= 7) return d.slice(0, 3) + "-" + d.slice(3);
-    return d.slice(0, 3) + "-" + d.slice(3, 7) + "-" + d.slice(7, 11);
-  }
-
-  function bindPhoneInputs() {
-    const doc = window.parent.document;
-    const inputs = Array.from(doc.querySelectorAll('input[placeholder="010-0000-0000"]'));
-
-    inputs.forEach(function (input) {
-      if (input.dataset.eumiPhoneGuard === "1") return;
-      input.dataset.eumiPhoneGuard = "1";
-      input.setAttribute("inputmode", "numeric");
-      input.setAttribute("autocomplete", "tel");
-      input.setAttribute("maxlength", "13");
-
-      input.addEventListener("beforeinput", function (event) {
-        if (event.inputType && event.inputType.startsWith("delete")) return;
-        if (event.ctrlKey || event.metaKey || event.altKey) return;
-        const data = event.data || "";
-        if (data && /\D/.test(data)) {
-          event.preventDefault();
-        }
-        const currentDigits = digitsOnly(input.value);
-        if (data && /\d/.test(data) && currentDigits.length >= 11) {
-          event.preventDefault();
-        }
-      });
-
-      input.addEventListener("paste", function (event) {
-        event.preventDefault();
-        const pasted = (event.clipboardData || window.clipboardData).getData("text");
-        const formatted = formatPhone(pasted);
-        input.value = formatted;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-
-      input.addEventListener("input", function () {
-        const formatted = formatPhone(input.value);
-        if (input.value !== formatted) {
-          input.value = formatted;
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-        }
-      });
-
-      input.value = formatPhone(input.value);
-    });
-  }
-
-  bindPhoneInputs();
-  const timer = setInterval(bindPhoneInputs, 500);
-  setTimeout(function () { clearInterval(timer); }, 10000);
+(function(){
+function d(v){return (v||'').replace(/\D/g,'').slice(0,11)}
+function f(v){const x=d(v); if(x.length<=3)return x; if(x.length<=7)return x.slice(0,3)+'-'+x.slice(3); return x.slice(0,3)+'-'+x.slice(3,7)+'-'+x.slice(7,11)}
+function bind(){const doc=window.parent.document; doc.querySelectorAll('input[placeholder="010-0000-0000"]').forEach(function(i){
+ if(i.dataset.eumiPhoneGuard==='1')return; i.dataset.eumiPhoneGuard='1'; i.setAttribute('inputmode','numeric'); i.setAttribute('maxlength','13');
+ i.addEventListener('beforeinput',function(e){ if(e.inputType&&e.inputType.startsWith('delete'))return; if(e.ctrlKey||e.metaKey||e.altKey)return; const a=e.data||''; if(a&&/\D/.test(a))e.preventDefault(); if(a&&/\d/.test(a)&&d(i.value).length>=11)e.preventDefault(); });
+ i.addEventListener('paste',function(e){e.preventDefault(); const p=(e.clipboardData||window.clipboardData).getData('text'); i.value=f(p); i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new Event('change',{bubbles:true}));});
+ i.addEventListener('input',function(){const y=f(i.value); if(i.value!==y){i.value=y; i.dispatchEvent(new Event('input',{bubbles:true}));}}); i.value=f(i.value);
+});}
+bind(); const t=setInterval(bind,500); setTimeout(function(){clearInterval(t)},10000);
 })();
 </script>
-        """,
-        height=0,
-        width=0,
-    )
+''', height=0, width=0)
 
-# =========================================================
-# 세션
-# =========================================================
-if "parent_user" not in st.session_state:
-    st.session_state.parent_user = None
-if "last_classification" not in st.session_state:
-    st.session_state.last_classification = None
+def digits_only(v): return re.sub(r'\D','',v or '')[:11]
+def format_phone(v):
+    v=digits_only(v)
+    if len(v)<=3: return v
+    if len(v)<=7: return f'{v[:3]}-{v[3:]}'
+    return f'{v[:3]}-{v[3:7]}-{v[7:11]}'
+def normalize_phone_input(key):
+    raw=st.session_state.get(key,''); val=format_phone(raw)
+    if raw!=val: st.session_state[key]=val
+def phone_input(label,key):
+    val=st.text_input(label,key=key,placeholder='010-0000-0000',max_chars=13,help='숫자만 11자리까지 입력됩니다. - 는 자동으로 들어갑니다.',on_change=normalize_phone_input,args=(key,))
+    return digits_only(val)
+def hash_password(phone,pw): return hashlib.sha256(f'{AUTH_SECRET}:{phone}:{pw}'.encode()).hexdigest()
 
-# =========================================================
-# 공통 함수
-# =========================================================
-def digits_only(value: str) -> str:
-    return re.sub(r"\D", "", value or "")[:11]
-
-
-def format_phone(digits: str) -> str:
-    digits = digits_only(digits)
-    if len(digits) <= 3:
-        return digits
-    if len(digits) <= 7:
-        return f"{digits[:3]}-{digits[3:]}"
-    return f"{digits[:3]}-{digits[3:7]}-{digits[7:11]}"
-
-
-def normalize_phone_input(key: str) -> None:
-    raw = st.session_state.get(key, "")
-    formatted = format_phone(raw)
-    if raw != formatted:
-        st.session_state[key] = formatted
-
-
-def phone_input(label: str, key: str) -> str:
-    value = st.text_input(
-        label,
-        key=key,
-        placeholder="010-0000-0000",
-        help="숫자만 11자리까지 입력됩니다. - 는 자동으로 들어갑니다.",
-        max_chars=13,
-        on_change=normalize_phone_input,
-        args=(key,),
-    )
-    digits = digits_only(value)
-    return digits
-
-
-def hash_password(phone_digits: str, password: str) -> str:
-    raw = f"{AUTH_SECRET}:{phone_digits}:{password}".encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
-
-
-def make_parent_code() -> str:
-    return "P-" + uuid.uuid4().hex[:8].upper()
-
-
-def create_user(role: str, phone_digits: str, name: str, password: str) -> Dict[str, Any]:
-    existing = supabase.table("eumi_users")\
-        .select("id")\
-        .eq("role", role)\
-        .eq("phone", phone_digits)\
-        .limit(1)\
-        .execute()
-    if existing.data:
-        raise ValueError("이미 가입된 휴대폰 번호입니다. 로그인해주세요.")
-
-    data = {
-        "role": role,
-        "phone": phone_digits,
-        "name": name.strip(),
-        "password_hash": hash_password(phone_digits, password),
-    }
-    if role == "parent":
-        data["parent_code"] = make_parent_code()
-
-    res = supabase.table("eumi_users").insert(data).execute()
-    if not res.data:
-        raise RuntimeError("계정을 만들지 못했습니다.")
+def create_user(phone,name,pw):
+    if supabase.table('eumi_users').select('id').eq('phone',phone).limit(1).execute().data: raise ValueError('이미 가입된 휴대폰 번호입니다. 로그인해주세요.')
+    res=supabase.table('eumi_users').insert({'phone':phone,'name':name.strip(),'password_hash':hash_password(phone,pw)}).execute()
+    if not res.data: raise RuntimeError('계정을 만들지 못했습니다.')
     return res.data[0]
+def login_user(phone,pw):
+    res=supabase.table('eumi_users').select('*').eq('phone',phone).limit(1).execute()
+    if not res.data: raise ValueError('가입되지 않은 휴대폰 번호입니다.')
+    user=res.data[0]
+    if user.get('password_hash')!=hash_password(phone,pw): raise ValueError('비밀번호가 틀렸습니다.')
+    activate_pending_signup_links(user); return user
 
+def get_user_by_phone(phone):
+    res=supabase.table('eumi_users').select('*').eq('phone',phone).limit(1).execute()
+    return res.data[0] if res.data else {}
 
-def login_user(role: str, phone_digits: str, password: str) -> Dict[str, Any]:
-    res = supabase.table("eumi_users")\
-        .select("*")\
-        .eq("role", role)\
-        .eq("phone", phone_digits)\
-        .limit(1)\
-        .execute()
-    if not res.data:
-        raise ValueError("가입되지 않은 휴대폰 번호입니다.")
-    user = res.data[0]
-    if user.get("password_hash") != hash_password(phone_digits, password):
-        raise ValueError("비밀번호가 틀렸습니다.")
-    return user
+def relation_input(prefix, opts):
+    selected=st.selectbox('관계 선택',opts,key=f'{prefix}_relation')
+    if selected=='기타': return st.text_input('관계명을 입력해주세요',key=f'{prefix}_relation_custom',placeholder='예: 장모님, 할머니, 보호자').strip()
+    return selected
 
+def upsert_family_link(caregiver_user_id,caree_user_id,caregiver_phone,caree_phone,relation_label,reverse_relation_label,requested_by_user_id,status):
+    q=supabase.table('family_links').select('id')
+    q=q.eq('caregiver_user_id',caregiver_user_id) if caregiver_user_id else q.eq('caregiver_phone',caregiver_phone)
+    q=q.eq('caree_user_id',caree_user_id) if caree_user_id else q.eq('caree_phone',caree_phone)
+    old=q.limit(1).execute().data
+    payload={'caregiver_user_id':caregiver_user_id,'caree_user_id':caree_user_id,'caregiver_phone':caregiver_phone,'caree_phone':caree_phone,'relation_label':relation_label,'reverse_relation_label':reverse_relation_label,'requested_by_user_id':requested_by_user_id,'status':status,'updated_at':datetime.now().isoformat()}
+    if old: supabase.table('family_links').update(payload).eq('id',old[0]['id']).execute()
+    else: supabase.table('family_links').insert(payload).execute()
 
-def get_parent_url(parent_code: str) -> str:
-    if APP_URL:
-        return f"{APP_URL}?code={parent_code}"
-    return f"부모님용 앱 주소 뒤에 ?code={parent_code} 를 붙여서 저장하세요."
-
-
-def safe_json_loads(text: str) -> Dict[str, Any]:
-    if not text:
-        return {}
-    cleaned = text.strip()
-    cleaned = re.sub(r"^```(?:json)?", "", cleaned).strip()
-    cleaned = re.sub(r"```$", "", cleaned).strip()
-    match = re.search(r"\{.*\}", cleaned, flags=re.S)
-    if match:
-        cleaned = match.group(0)
+def activate_pending_signup_links(user):
     try:
-        return json.loads(cleaned)
-    except Exception:
-        return {}
+        supabase.table('family_links').update({'caree_user_id':user['id'],'status':'pending','updated_at':datetime.now().isoformat()}).eq('caree_phone',user['phone']).is_('caree_user_id','null').execute()
+        supabase.table('family_links').update({'caregiver_user_id':user['id'],'status':'active','updated_at':datetime.now().isoformat()}).eq('caregiver_phone',user['phone']).is_('caregiver_user_id','null').execute()
+    except Exception: pass
 
+def add_parent_link(user,parent_phone,relation):
+    if len(parent_phone)!=11: raise ValueError('부모님 휴대폰 번호 11자리를 입력해주세요.')
+    if parent_phone==user.get('phone'): raise ValueError('본인 번호는 부모님으로 추가할 수 없습니다.')
+    if not relation: raise ValueError('관계를 선택하거나 입력해주세요.')
+    parent=get_user_by_phone(parent_phone)
+    upsert_family_link(user['id'], parent.get('id') if parent else None, user['phone'], parent_phone, relation, '자녀', user['id'], 'pending' if parent else 'pending_signup')
+    return '부모님께 연결 요청을 보냈습니다. 부모님이 앱에서 승인하면 기록을 볼 수 있어요.' if parent else '아직 가입하지 않은 번호입니다. 부모님이 이 번호로 가입하면 연결 요청이 표시됩니다.'
+def add_child_link(user,child_phone,relation):
+    if len(child_phone)!=11: raise ValueError('자녀 휴대폰 번호 11자리를 입력해주세요.')
+    if child_phone==user.get('phone'): raise ValueError('본인 번호는 자녀로 추가할 수 없습니다.')
+    if not relation: raise ValueError('관계를 선택하거나 입력해주세요.')
+    child=get_user_by_phone(child_phone)
+    upsert_family_link(child.get('id') if child else None, user['id'], child_phone, user['phone'], '부모님', relation, user['id'], 'active' if child else 'pending_signup')
+    return '자녀를 연결했습니다. 이제 자녀가 내 기록을 볼 수 있습니다.' if child else '자녀 번호를 등록했습니다. 자녀가 이 번호로 가입하면 자동으로 연결됩니다.'
+def load_pending_requests_for_me(uid): return supabase.table('family_links').select('*').eq('caree_user_id',uid).eq('status','pending').execute().data or []
+def approve_link(lid): supabase.table('family_links').update({'status':'active','updated_at':datetime.now().isoformat()}).eq('id',lid).execute()
+def reject_link(lid): supabase.table('family_links').update({'status':'rejected','updated_at':datetime.now().isoformat()}).eq('id',lid).execute()
+def load_parents_i_help(uid): return supabase.table('family_links').select('*').eq('caregiver_user_id',uid).eq('status','active').order('created_at',desc=True).execute().data or []
+def load_children_helping_me(uid): return supabase.table('family_links').select('*').eq('caree_user_id',uid).eq('status','active').order('created_at',desc=True).execute().data or []
+def get_user_name(uid, fallback=''):
+    if not uid: return format_phone(fallback) if fallback else '미가입 가족'
+    res=supabase.table('eumi_users').select('name,phone').eq('id',uid).limit(1).execute()
+    return (res.data[0].get('name') or format_phone(res.data[0].get('phone',''))) if res.data else (format_phone(fallback) if fallback else '가족')
+def load_logs_for_user(uid):
+    try: return supabase.table('usage_logs').select('*').eq('user_id',uid).order('created_at',desc=True).limit(500).execute().data or []
+    except Exception as e: st.error(f'사용 기록을 불러오지 못했습니다: {e}'); return []
+def safe_dt(v):
+    try: return datetime.fromisoformat((v or '').replace('Z','+00:00'))
+    except Exception: return None
 
-def normalize_folder_value(value: str, default: str) -> str:
-    value = (value or "").strip()
-    value = re.sub(r"[\n\r\t]+", " ", value)
-    value = re.sub(r"\s+", " ", value)
-    return value[:30] if value else default
+def show_log_summary(logs):
+    if not logs: st.markdown("<div class='guide-card'>아직 저장된 기록이 없습니다.</div>",unsafe_allow_html=True); return
+    counts={}
+    for log in logs:
+        label=f"{log.get('category') or '기타'} > {log.get('place_name') or '미분류'}"; counts[label]=counts.get(label,0)+1
+    st.markdown('### 자주 어려워한 곳')
+    for i,(label,count) in enumerate(sorted(counts.items(),key=lambda x:x[1],reverse=True)[:10],1): st.markdown(f"<div class='metric-card'><b>{i}. {label}</b><br>{count}회 질문</div>",unsafe_allow_html=True)
+    st.markdown('### 장소별 기록')
+    grouped={}
+    for log in logs:
+        label=f"{log.get('category') or '기타'} > {log.get('place_name') or '미분류'}"; grouped.setdefault(label,[]).append(log)
+    for folder,items in grouped.items():
+        with st.expander(f'📁 {folder} ({len(items)}회)',expanded=False):
+            for log in items[:50]:
+                dt=safe_dt(log.get('created_at','')); t=dt.strftime('%Y-%m-%d %H:%M') if dt else log.get('created_at','')
+                q=log.get('question') or ''; a=log.get('answer') or ''; title=log.get('short_title') or log.get('task_name') or '질문 기록'
+                st.markdown(f"<div class='log-card'><b>{title}</b><br><span class='small-note'>{t}</span><br><b>질문:</b> {q}<br><b>답변:</b> {a[:350]}{'...' if len(a)>350 else ''}</div>",unsafe_allow_html=True)
 
-
-def build_folder_key(category: str, place_name: str) -> str:
-    category = normalize_folder_value(category, "기타")
-    place_name = normalize_folder_value(place_name, "미분류")
-    return f"{category}__{place_name}"
-
-
-def classify_image(image: Image.Image, question: str) -> Dict[str, str]:
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY가 설정되어 있지 않습니다.")
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    tmp_path = None
+def norm(v,default):
+    v=re.sub(r'\s+',' ',(v or '').strip())
+    return v[:30] if v else default
+def folder_key(c,p): return f"{norm(c,'기타')}__{norm(p,'미분류')}"
+def safe_json_loads(text):
+    cleaned=(text or '').strip(); cleaned=re.sub(r'^```(?:json)?','',cleaned).strip(); cleaned=re.sub(r'```$','',cleaned).strip(); m=re.search(r'\{.*\}',cleaned,flags=re.S)
+    try: return json.loads(m.group(0) if m else cleaned)
+    except Exception: return {}
+def classify_and_answer(image,question,prev):
+    if not GEMINI_API_KEY: raise RuntimeError('GEMINI_API_KEY가 설정되어 있지 않습니다.')
+    client=genai.Client(api_key=GEMINI_API_KEY); tmp_path=None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            image.convert("RGB").save(tmp.name, format="JPEG")
-            tmp_path = tmp.name
-        uploaded_image = client.files.upload(file=tmp_path)
-
-        prompt = f"""
-다음 이미지는 어르신이 디지털 사용 중 어려워서 올린 화면입니다.
-질문: {question}
-
-아래 JSON 형식으로만 답하세요.
-- category: 큰 분류. 예: 키오스크, 병원 앱, 은행 앱, 기차/교통, 배달/쇼핑, 주민센터/공공, 기타
-- place_name: 장소명/브랜드명/앱명. 예: 맥도날드, 버거킹, 병원 무인접수기, 코레일, 국민은행. 모르면 미분류
-- task_name: 하려는 일. 예: 주문하기, 결제하기, 접수하기, 예매하기, 로그인하기
-- short_title: 나중에 기록에서 볼 짧은 제목
-
-{{"category":"", "place_name":"", "task_name":"", "short_title":""}}
-""".strip()
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[prompt, uploaded_image],
-            config={"response_mime_type": "application/json"},
-        )
-        data = safe_json_loads(response.text or "")
-        category = normalize_folder_value(str(data.get("category", "")), "기타")
-        place_name = normalize_folder_value(str(data.get("place_name", "")), "미분류")
-        task_name = normalize_folder_value(str(data.get("task_name", "")), "도움 요청")
-        short_title = normalize_folder_value(str(data.get("short_title", "")), task_name)
-        return {
-            "category": category,
-            "place_name": place_name,
-            "task_name": task_name,
-            "short_title": short_title,
-            "folder_key": build_folder_key(category, place_name),
-        }
+        with tempfile.NamedTemporaryFile(delete=False,suffix='.jpg') as tmp: image.convert('RGB').save(tmp.name,format='JPEG'); tmp_path=tmp.name
+        up=client.files.upload(file=tmp_path)
+        prev_text=''.join([f"이전 기록 {i}: {l.get('category')} > {l.get('place_name')}, {l.get('question')}, {(l.get('answer') or '')[:180]}\n" for i,l in enumerate(prev[:5],1)])
+        prompt=f'''사용자 질문: {question}\n이전 기록:\n{prev_text}\n아래 JSON 형식으로만 답하세요.\n{{"category":"키오스크/병원 앱/은행 앱/기차/교통/배달/쇼핑/주민센터/공공/기타","place_name":"식당명 또는 앱명, 모르면 미분류","task_name":"하려는 일","short_title":"짧은 제목","answer":"어르신에게 쉬운 말로 다음 행동 안내. 비슷한 이전 기록이 있으면 짧게 언급"}}'''
+        r=client.models.generate_content(model='gemini-2.5-flash',contents=[prompt,up],config={'system_instruction':'어르신에게 쉽고 짧게 안내하세요. 위치, 색깔, 버튼 이름을 구체적으로 말하세요.'})
+        p=safe_json_loads(r.text)
+        return {'category':norm(p.get('category',''),'기타'),'place_name':norm(p.get('place_name',''),'미분류'),'task_name':norm(p.get('task_name',''),'확인하기'),'short_title':norm(p.get('short_title',''),'화면 질문'),'answer':p.get('answer') or r.text or '답변을 만들지 못했습니다.'}
     finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+        if tmp_path and os.path.exists(tmp_path): os.unlink(tmp_path)
+def save_usage_log(uid,q,result,has_image=True):
+    supabase.table('usage_logs').insert({'user_id':uid,'question':q,'answer':result.get('answer',''),'has_image':has_image,'category':result.get('category','기타'),'place_name':result.get('place_name','미분류'),'task_name':result.get('task_name','확인하기'),'short_title':result.get('short_title','화면 질문'),'folder_key':folder_key(result.get('category','기타'),result.get('place_name','미분류')),'created_at':datetime.now().isoformat()}).execute()
+def show_auth(session_key,title='이음이'):
+    install_phone_input_guard(); apply_style(title,'사진으로 도움받고, 기록을 가족과 함께 확인하세요')
+    _,col,_=st.columns([.3,4.4,.3])
+    with col:
+        t1,t2=st.tabs(['🔐 로그인','📝 처음 사용'])
+        with t1:
+            st.markdown('### 로그인'); phone=phone_input('휴대폰 번호',f'{session_key}_login_phone'); pw=st.text_input('비밀번호',type='password',key=f'{session_key}_login_pw')
+            if st.button('로그인',key=f'{session_key}_login_submit'):
+                try:
+                    if len(phone)!=11: raise ValueError('휴대폰 번호 11자리를 입력해주세요.')
+                    if not pw: raise ValueError('비밀번호를 입력해주세요.')
+                    st.session_state[session_key]=login_user(phone,pw); st.rerun()
+                except Exception as e: st.error(str(e))
+        with t2:
+            st.markdown('### 처음 사용하는 분'); phone=phone_input('휴대폰 번호',f'{session_key}_join_phone'); name=st.text_input('이름',key=f'{session_key}_join_name'); pw=st.text_input('비밀번호',type='password',key=f'{session_key}_join_pw',placeholder='6자 이상'); pw2=st.text_input('비밀번호 확인',type='password',key=f'{session_key}_join_pw2')
+            if st.button('계정 만들기',key=f'{session_key}_join_submit'):
+                try:
+                    if len(phone)!=11: raise ValueError('휴대폰 번호 11자리를 입력해주세요.')
+                    if not name.strip(): raise ValueError('이름을 입력해주세요.')
+                    if len(pw)<6: raise ValueError('비밀번호는 6자 이상이어야 해요.')
+                    if pw!=pw2: raise ValueError('비밀번호가 일치하지 않아요.')
+                    st.session_state[session_key]=create_user(phone,name,pw); st.rerun()
+                except Exception as e: st.error(f'회원가입 실패: {e}')
+def family_management_ui(user,prefix='family'):
+    install_phone_input_guard(); st.markdown('### 가족 관리'); st.markdown("<div class='guide-card'><b>부모님</b>은 내가 도와드릴 가족입니다.<br><b>자녀</b>는 내 기록을 함께 볼 가족입니다.</div>",unsafe_allow_html=True)
+    ptab,ctab,rtab=st.tabs(['👵 부모님','👨‍👩‍👧 자녀','✅ 연결 요청'])
+    with ptab:
+        st.markdown('#### 부모님 추가'); ph=phone_input('부모님 휴대폰 번호',f'{prefix}_parent_phone'); rel=relation_input(f'{prefix}_parent',['엄마','아빠','배우자','기타'])
+        if st.button('부모님 연결 요청',key=f'{prefix}_add_parent'):
+            try: st.success(add_parent_link(user,ph,rel)); st.rerun()
+            except Exception as e: st.error(str(e))
+        st.markdown('#### 내가 도와주는 부모님')
+        links=load_parents_i_help(user['id'])
+        if not links: st.info('아직 연결된 부모님이 없습니다.')
+        for l in links: st.markdown(f"<div class='folder-card'>👵 <b>{l.get('relation_label') or '부모님'}</b> — {get_user_name(l.get('caree_user_id'),l.get('caree_phone',''))}</div>",unsafe_allow_html=True)
+    with ctab:
+        st.markdown('#### 자녀 추가'); ph=phone_input('자녀 휴대폰 번호',f'{prefix}_child_phone'); rel=relation_input(f'{prefix}_child',['아들','딸','배우자','기타'])
+        if st.button('자녀 연결',key=f'{prefix}_add_child'):
+            try: st.success(add_child_link(user,ph,rel)); st.rerun()
+            except Exception as e: st.error(str(e))
+        st.markdown('#### 나를 도와주는 자녀')
+        links=load_children_helping_me(user['id'])
+        if not links: st.info('아직 연결된 자녀가 없습니다.')
+        for l in links: st.markdown(f"<div class='folder-card'>👨‍👩‍👧 <b>{l.get('reverse_relation_label') or '자녀'}</b> — {get_user_name(l.get('caregiver_user_id'),l.get('caregiver_phone',''))}</div>",unsafe_allow_html=True)
+    with rtab:
+        pending=load_pending_requests_for_me(user['id'])
+        if not pending: st.info('승인할 요청이 없습니다.')
+        for l in pending:
+            st.markdown(f"<div class='folder-card'><b>{get_user_name(l.get('caregiver_user_id'),l.get('caregiver_phone',''))}</b>님이 내 기록 연결을 요청했습니다.<br>관계: {l.get('relation_label') or '가족'}</div>",unsafe_allow_html=True)
+            a,b=st.columns(2)
+            with a:
+                if st.button('허용',key=f"approve_{l['id']}"): approve_link(l['id']); st.rerun()
+            with b:
+                if st.button('거절',key=f"reject_{l['id']}"): reject_link(l['id']); st.rerun()
 
-
-def load_previous_logs(parent_user_id: str, folder_key: str, limit: int = 5) -> List[Dict[str, Any]]:
-    try:
-        res = supabase.table("usage_logs")\
-            .select("id, question, answer, task_name, short_title, created_at")\
-            .eq("parent_user_id", parent_user_id)\
-            .eq("folder_key", folder_key)\
-            .order("created_at", desc=True)\
-            .limit(limit)\
-            .execute()
-        return res.data or []
-    except Exception:
-        return []
-
-
-def make_previous_context(logs: List[Dict[str, Any]]) -> str:
-    if not logs:
-        return "이 장소/분류의 이전 질문 기록은 없습니다."
-    lines = []
-    for idx, log in enumerate(logs, start=1):
-        q = (log.get("question") or "")[:120]
-        a = (log.get("answer") or "")[:220]
-        title = log.get("short_title") or log.get("task_name") or "이전 질문"
-        created = (log.get("created_at") or "")[:10]
-        lines.append(f"{idx}. [{created}] {title}\n질문: {q}\n이전 답변 요약: {a}")
-    return "\n\n".join(lines)
-
-
-def answer_image(image: Image.Image, question: str, classification: Dict[str, str], previous_logs: List[Dict[str, Any]]) -> str:
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY가 설정되어 있지 않습니다.")
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-            image.convert("RGB").save(tmp.name, format="JPEG")
-            tmp_path = tmp.name
-        uploaded_image = client.files.upload(file=tmp_path)
-
-        system_instruction = (
-            "당신은 디지털 기기가 익숙하지 않은 어르신을 돕는 친절한 안내자입니다. "
-            "어려운 용어 대신 쉬운 말로 설명하세요. 화면의 위치, 색깔, 버튼 모양을 구체적으로 말하세요. "
-            "한 번에 너무 많은 단계를 말하지 말고, 지금 바로 누를 곳을 먼저 알려주세요. "
-            "개인정보, 결제, 송금, 비밀번호 입력 화면에서는 무리하게 진행시키지 말고 자녀나 직원에게 확인하라고 안내하세요."
-        )
-
-        prompt = f"""
-사용자가 올린 화면 분류:
-- 큰 분류: {classification.get('category')}
-- 장소/앱/브랜드: {classification.get('place_name')}
-- 하려는 일: {classification.get('task_name')}
-
-이번 질문:
-{question}
-
-같은 폴더의 이전 질문 기록:
-{make_previous_context(previous_logs)}
-
-답변 규칙:
-1. 이전에 비슷한 질문이 있으면 "전에 비슷한 질문을 하셨어요"라고 먼저 알려주세요.
-2. 이번 화면에서 바로 해야 할 행동을 1~3단계로 안내하세요.
-3. 버튼 위치, 색상, 글자를 구체적으로 말하세요.
-4. 위험한 결제/송금/개인정보 화면이면 자녀나 직원에게 확인하라고 말하세요.
-""".strip()
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[prompt, uploaded_image],
-            config={"system_instruction": system_instruction},
-        )
-        return response.text or "답변을 만들지 못했어요. 사진을 조금 더 선명하게 다시 올려주세요."
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-
-
-def save_log(parent_user: Dict[str, Any], question: str, answer: str, classification: Dict[str, str], has_image: bool, image_name: str = "") -> None:
-    supabase.table("usage_logs").insert({
-        "user_id": parent_user.get("parent_code"),
-        "parent_user_id": parent_user.get("id"),
-        "parent_code": parent_user.get("parent_code"),
-        "category": classification.get("category", "기타"),
-        "place_name": classification.get("place_name", "미분류"),
-        "task_name": classification.get("task_name", "도움 요청"),
-        "folder_key": classification.get("folder_key", "기타__미분류"),
-        "short_title": classification.get("short_title", "질문"),
-        "question": question,
-        "answer": answer,
-        "has_image": has_image,
-        "image_name": image_name,
-        "created_at": datetime.now().isoformat(),
-    }).execute()
-
-
-def load_my_logs(parent_user_id: str) -> List[Dict[str, Any]]:
-    try:
-        res = supabase.table("usage_logs")\
-            .select("*")\
-            .eq("parent_user_id", parent_user_id)\
-            .order("created_at", desc=True)\
-            .limit(500)\
-            .execute()
-        return res.data or []
-    except Exception as e:
-        st.error(f"기록을 불러오지 못했습니다: {e}")
-        return []
-
-
-def logout() -> None:
-    st.session_state.parent_user = None
-    st.rerun()
-
-# =========================================================
-# 로그인 화면
-# =========================================================
-def show_auth() -> None:
-    install_phone_input_guard()
-    st.markdown(
-        """
-<div class="title-area">
-    <div class="title-main">🔗 이음이</div>
-    <div class="title-sub">부모님용 디지털 도우미<br>기록이 남아서 나중에 다시 볼 수 있어요</div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-
-    col1, col2, col3 = st.columns([0.35, 4.3, 0.35])
-    with col2:
-        tab_login, tab_join = st.tabs(["🔐 로그인", "📝 처음 사용"])
-
-        with tab_login:
-            st.markdown("### 부모님 계정으로 로그인")
-            phone = phone_input("휴대폰 번호", "parent_login_phone")
-            pw = st.text_input("비밀번호", type="password", key="parent_login_pw", placeholder="비밀번호 입력")
-            submitted = st.button("로그인", key="parent_login_submit")
-            if submitted:
-                if len(phone) != 11:
-                    st.error("휴대폰 번호 11자리를 입력해주세요.")
-                elif not pw:
-                    st.error("비밀번호를 입력해주세요.")
-                else:
+st.set_page_config(page_title='이음이 — 디지털 도움 기록장', page_icon='🔗', layout='centered')
+if 'eumi_user' not in st.session_state: st.session_state.eumi_user=None
+def logout(): st.session_state.eumi_user=None; st.rerun()
+def show_main():
+    install_phone_input_guard(); user=st.session_state.eumi_user; apply_style('이음이',f"{user.get('name','사용자')}님, 막히는 화면을 사진으로 올려주세요")
+    a,b=st.columns([3,1])
+    with a: st.markdown(f"<div class='small-note'><b>내 번호:</b> {format_phone(user.get('phone',''))}</div>",unsafe_allow_html=True)
+    with b:
+        if st.button('로그아웃'): logout()
+    h,his,fam=st.tabs(['📷 도움받기','📁 내 기록','👨‍👩‍👧 가족 관리'])
+    with h:
+        st.markdown('#### 📷 막히는 화면 사진을 올려주세요'); st.markdown("<div class='guide-card'>키오스크, 병원 앱, 은행 앱, 기차 예매 화면 등<br><b>막히는 화면을 사진으로 찍어서 올려주세요.</b><br>이전에 비슷한 질문이 있으면 같이 참고해서 알려드립니다.</div>",unsafe_allow_html=True)
+        file=st.file_uploader('사진 선택',type=['jpg','jpeg','png'],label_visibility='collapsed'); q=st.text_input('질문',value='이 화면에서 다음에 뭘 누르면 되나요?',key='help_question')
+        if file:
+            img=Image.open(file); st.image(img,caption='업로드된 화면',use_container_width=True)
+            if st.button('✨ AI에게 물어보기'):
+                with st.spinner('AI가 화면을 분석하고 있어요...'):
                     try:
-                        st.session_state.parent_user = login_user("parent", phone, pw)
-                        st.success("로그인되었습니다.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(str(e))
-
-        with tab_join:
-            st.markdown("### 처음 사용하는 분")
-            phone = phone_input("휴대폰 번호", "parent_join_phone")
-            name = st.text_input("이름", key="parent_join_name", placeholder="예: 홍길동")
-            pw = st.text_input("비밀번호", type="password", key="parent_join_pw", placeholder="6자 이상")
-            pw2 = st.text_input("비밀번호 확인", type="password", key="parent_join_pw2", placeholder="비밀번호 다시 입력")
-            submitted = st.button("계정 만들기", key="parent_join_submit")
-            if submitted:
-                if len(phone) != 11:
-                    st.error("휴대폰 번호 11자리를 입력해주세요.")
-                elif not name.strip():
-                    st.error("이름을 입력해주세요.")
-                elif len(pw) < 6:
-                    st.error("비밀번호는 6자 이상이어야 해요.")
-                elif pw != pw2:
-                    st.error("비밀번호가 일치하지 않아요.")
-                else:
-                    try:
-                        user = create_user("parent", phone, name, pw)
-                        st.session_state.parent_user = user
-                        st.success("계정이 만들어졌습니다.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"회원가입 실패: {e}")
-
-# =========================================================
-# 메인 화면
-# =========================================================
-def show_main() -> None:
-    parent_user = st.session_state.parent_user
-    parent_code = parent_user.get("parent_code")
-
-    st.markdown(
-        f"""
-<div class="title-area">
-    <div class="title-main">🔗 이음이</div>
-    <div class="title-sub">{parent_user.get('name', '부모님')}님, 막히는 화면을 사진으로 올려주세요</div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-
-    col_a, col_b = st.columns([3, 1])
-    with col_a:
-        st.markdown(f"<div class='small-note'><b>내 연결 코드:</b> {parent_code}</div>", unsafe_allow_html=True)
-    with col_b:
-        if st.button("로그아웃"):
-            logout()
-
-    tab_help, tab_history, tab_code = st.tabs(["📷 사진으로 물어보기", "📁 내 기록", "👨‍👩‍👧 자녀 연결 코드"])
-
-    with tab_help:
-        st.markdown("#### 📷 막히는 화면 사진을 올려주세요")
-        st.markdown(
-            """
-<div class="guide-card">
-키오스크, 병원 앱, 은행 앱, 기차 예매 화면처럼<br>
-<b>어디를 눌러야 할지 모를 때 화면을 찍어서 올려주세요.</b><br>
-이음이가 장소별로 기록을 정리해두고, 다음에 비슷한 화면을 물어보면 이전 기록도 함께 참고합니다.
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-
-        uploaded_file = st.file_uploader("사진 선택", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
-
-        if uploaded_file:
-            image = Image.open(uploaded_file)
-            st.image(image, caption="올린 화면", use_container_width=True)
-
-            question = st.text_input(
-                "궁금한 점",
-                value="이 화면에서 다음에 뭘 누르면 되나요?",
-                help="그냥 두셔도 됩니다.",
-            )
-
-            if st.button("✨ AI에게 물어보기"):
-                with st.spinner("AI가 화면을 분류하고 이전 기록을 찾고 있어요 🙏"):
-                    try:
-                        classification = classify_image(image, question)
-                        previous_logs = load_previous_logs(parent_user.get("id"), classification["folder_key"])
-                        answer = answer_image(image, question, classification, previous_logs)
-                        save_log(parent_user, question, answer, classification, has_image=True, image_name=uploaded_file.name)
-
-                        st.success("기록이 저장되었습니다.")
-                        st.markdown("#### 📂 자동 분류")
-                        st.markdown(
-                            f"""
-<div class="folder-card">
-<b>큰 분류:</b> {classification['category']}<br>
-<b>장소/앱:</b> {classification['place_name']}<br>
-<b>하려는 일:</b> {classification['task_name']}
-</div>
-""",
-                            unsafe_allow_html=True,
-                        )
-
-                        if previous_logs:
-                            with st.expander("전에 비슷하게 물어본 기록 보기"):
-                                for log in previous_logs:
-                                    st.markdown(f"**{(log.get('created_at') or '')[:10]} — {log.get('short_title') or log.get('task_name')}**")
-                                    st.write(log.get("question", ""))
-                                    st.caption((log.get("answer") or "")[:250] + "...")
-
-                        st.markdown("#### 📣 AI 답변")
-                        st.markdown(f'<div class="answer-card">{answer}</div>', unsafe_allow_html=True)
-                    except Exception as e:
-                        st.error(f"오류가 발생했어요: {e}")
-        else:
-            st.markdown(
-                """
-<div class="guide-card" style="text-align:center; padding: 2rem;">
-📱 위의 버튼을 눌러 화면 사진을 올리면<br>
-AI가 <b>다음에 뭘 눌러야 하는지</b> 바로 알려드려요.
-</div>
-""",
-                unsafe_allow_html=True,
-            )
-
-    with tab_history:
-        st.markdown("#### 📁 내가 물어본 기록")
-        logs = load_my_logs(parent_user.get("id"))
-        if not logs:
-            st.info("아직 저장된 질문 기록이 없습니다.")
-        else:
-            folders: Dict[str, List[Dict[str, Any]]] = {}
-            for log in logs:
-                key = log.get("folder_key") or build_folder_key(log.get("category", "기타"), log.get("place_name", "미분류"))
-                folders.setdefault(key, []).append(log)
-
-            folder_options = []
-            for key, items in sorted(folders.items(), key=lambda x: len(x[1]), reverse=True):
-                sample = items[0]
-                label = f"📁 {sample.get('category', '기타')} > {sample.get('place_name', '미분류')} ({len(items)}회)"
-                folder_options.append((label, key))
-
-            selected_label = st.selectbox("폴더 선택", [x[0] for x in folder_options])
-            selected_key = dict(folder_options)[selected_label]
-            selected_logs = folders[selected_key]
-
-            st.markdown(f"### {selected_label}")
-            for log in selected_logs:
-                title = log.get("short_title") or log.get("task_name") or "질문"
-                created = (log.get("created_at") or "")[:16].replace("T", " ")
-                with st.expander(f"{created} · {title}"):
-                    st.markdown(f"**질문**: {log.get('question', '')}")
-                    st.markdown("**답변**")
-                    st.write(log.get("answer", ""))
-
-    with tab_code:
-        st.markdown("#### 👨‍👩‍👧 자녀에게 알려줄 코드")
-        st.markdown(
-            f"""
-<div class="code-card">
-    <div class="small-note">자녀 대시보드에서 아래 코드를 입력하면 사용 기록을 볼 수 있습니다.</div>
-    <div class="code-big">{parent_code}</div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-        st.markdown("#### 부모님 휴대폰에 저장할 주소")
-        st.info(get_parent_url(parent_code))
-        st.markdown(
-            """
-<div class="guide-card">
-<b>부모님 휴대폰에 저장하는 방법</b><br>
-1. 위 주소를 부모님 휴대폰에서 엽니다.<br>
-2. 브라우저 메뉴에서 <b>홈 화면에 추가</b>를 누릅니다.<br>
-3. 다음부터는 홈 화면의 이음이 아이콘만 누르면 됩니다.
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-
-if st.session_state.parent_user is None:
-    show_auth()
-else:
-    show_main()
+                        res=classify_and_answer(img,q,load_logs_for_user(user['id'])); save_usage_log(user['id'],q,res,True)
+                        st.markdown('#### 📣 AI 답변'); st.markdown(f"<div class='answer-card'>{res.get('answer')}</div>",unsafe_allow_html=True)
+                        st.markdown(f"<div class='folder-card'><b>자동 분류</b><br>📁 {res.get('category')} &gt; {res.get('place_name')}<br>하려는 일: {res.get('task_name')}</div>",unsafe_allow_html=True)
+                    except Exception as e: st.error(f'오류가 발생했어요: {e}')
+        else: st.markdown("<div class='guide-card'>먼저 사진을 올려주세요.</div>",unsafe_allow_html=True)
+    with his: st.markdown('### 내가 물어본 기록'); show_log_summary(load_logs_for_user(user['id']))
+    with fam: family_management_ui(user,'main_family')
+if st.session_state.eumi_user is None: show_auth('eumi_user','이음이')
+else: show_main()
