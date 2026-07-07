@@ -239,10 +239,9 @@ def show_login() -> None:
 
         with tab1:
             st.markdown("#### 자녀 계정으로 로그인하세요")
-            with st.form("child_login_form"):
-                phone = phone_input("휴대폰 번호", "child_login_phone")
-                password = st.text_input("비밀번호", type="password", key="child_login_pw", placeholder="비밀번호 입력")
-                submitted = st.form_submit_button("로그인")
+            phone = phone_input("휴대폰 번호", "child_login_phone")
+            password = st.text_input("비밀번호", type="password", key="child_login_pw", placeholder="비밀번호 입력")
+            submitted = st.button("로그인", key="child_login_submit")
             if submitted:
                 if len(phone) != 11:
                     st.error("휴대폰 번호 11자리를 입력해주세요.")
@@ -258,12 +257,11 @@ def show_login() -> None:
 
         with tab2:
             st.markdown("#### 새 계정을 만드세요")
-            with st.form("child_join_form"):
-                phone = phone_input("휴대폰 번호", "child_join_phone")
-                name = st.text_input("이름", key="child_join_name", placeholder="홍길동")
-                pw = st.text_input("비밀번호", type="password", key="child_join_pw", placeholder="6자 이상")
-                pw2 = st.text_input("비밀번호 확인", type="password", key="child_join_pw2", placeholder="비밀번호 재입력")
-                submitted = st.form_submit_button("회원가입")
+            phone = phone_input("휴대폰 번호", "child_join_phone")
+            name = st.text_input("이름", key="child_join_name", placeholder="홍길동")
+            pw = st.text_input("비밀번호", type="password", key="child_join_pw", placeholder="6자 이상")
+            pw2 = st.text_input("비밀번호 확인", type="password", key="child_join_pw2", placeholder="비밀번호 재입력")
+            submitted = st.button("회원가입", key="child_join_submit")
             if submitted:
                 if len(phone) != 11:
                     st.error("휴대폰 번호 11자리를 입력해주세요.")
