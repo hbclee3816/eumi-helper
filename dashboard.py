@@ -29,6 +29,70 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+
+# =========================================================
+# Streamlit 단축키 오작동 방지
+# =========================================================
+def disable_streamlit_clear_cache_shortcut() -> None:
+    """Ctrl+C 복사 시 Streamlit의 Clear caches 창이 뜨지 않도록 막습니다."""
+    components.html(
+        """
+<script>
+(function () {
+  const parentWindow = window.parent;
+  const doc = parentWindow.document;
+
+  if (parentWindow.__eumiClearCacheGuardInstalled) return;
+  parentWindow.__eumiClearCacheGuardInstalled = true;
+
+  function closeClearCacheDialog() {
+    const dialogs = Array.from(doc.querySelectorAll('[role="dialog"], [aria-modal="true"]'));
+    dialogs.forEach(function (dialog) {
+      const text = dialog.innerText || '';
+      if (text.indexOf('Clear caches') === -1) return;
+
+      const buttons = Array.from(dialog.querySelectorAll('button'));
+      const cancelButton = buttons.find(function (btn) {
+        return (btn.innerText || '').trim().toLowerCase() === 'cancel';
+      });
+
+      if (cancelButton) {
+        cancelButton.click();
+        return;
+      }
+
+      const closeButton = buttons.find(function (btn) {
+        return (btn.getAttribute('aria-label') || '').toLowerCase().includes('close') ||
+               (btn.innerText || '').trim() === '×' ||
+               (btn.innerText || '').trim().toLowerCase() === 'x';
+      });
+      if (closeButton) closeButton.click();
+    });
+  }
+
+  doc.addEventListener('keydown', function (event) {
+    const key = (event.key || '').toLowerCase();
+    if ((event.ctrlKey || event.metaKey) && key === 'c') {
+      // 복사 기본 기능은 그대로 두고, Streamlit 단축키 처리만 막습니다.
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      setTimeout(closeClearCacheDialog, 0);
+      setTimeout(closeClearCacheDialog, 80);
+    }
+  }, true);
+
+  closeClearCacheDialog();
+  const observer = new MutationObserver(closeClearCacheDialog);
+  observer.observe(doc.body, { childList: true, subtree: true });
+})();
+</script>
+        """,
+        height=0,
+        width=0,
+    )
+
+disable_streamlit_clear_cache_shortcut()
+
 # =========================================================
 # 디자인
 # =========================================================
@@ -199,13 +263,12 @@ def inject_phone_input_guard():
 
 
 def phone_text_input(label: str, key: str, placeholder: str = "010-1234-5678") -> str:
-    """휴대폰 번호 전용 입력창: 숫자 11자리까지만 쓰고 하이픈은 자동 표시합니다."""
+    """휴대폰 번호 전용 입력창: 숫자 11자리까지만 입력받고 하이픈은 자동 표시합니다."""
     return st.text_input(
         label,
         key=key,
         placeholder=placeholder,
-        on_change=clean_phone_input,
-        args=(key,),
+        max_chars=13,
         help="숫자 11자리까지만 입력하세요. 하이픈(-)은 자동으로 붙습니다.",
     )
 
@@ -262,16 +325,20 @@ def show_login():
 
         with tab1:
             st.markdown("#### 자녀 계정으로 로그인하세요")
-            phone = phone_text_input("휴대폰 번호", key="login_phone")
-            password = st.text_input("비밀번호", type="password", key="login_pw", placeholder="비밀번호 입력")
+            with st.form("login_form", clear_on_submit=False):
+                phone = phone_text_input("휴대폰 번호", key="login_phone")
+                password = st.text_input("비밀번호", type="password", key="login_pw", placeholder="비밀번호 입력")
+                login_submitted = st.form_submit_button("로그인")
 
-            if st.button("로그인", key="login_btn"):
-                phone_digits = normalize_phone(phone)
+            if login_submitted:
+                phone_digits = normalize_phone(phone or st.session_state.get("login_phone", ""))
 
-                if not phone_digits or not password:
-                    st.error("휴대폰 번호와 비밀번호를 입력해주세요.")
+                if not phone_digits:
+                    st.error("휴대폰 번호를 입력해주세요.")
                 elif not is_valid_phone(phone_digits):
                     st.error("휴대폰 번호를 다시 확인해주세요. 예: 010-1234-5678")
+                elif not password:
+                    st.error("비밀번호를 입력해주세요.")
                 else:
                     try:
                         res = supabase.auth.sign_in_with_password({
@@ -286,22 +353,31 @@ def show_login():
 
         with tab2:
             st.markdown("#### 새 계정을 만드세요")
-            new_phone = phone_text_input("휴대폰 번호", key="reg_phone")
-            new_name = st.text_input("이름", key="reg_name", placeholder="홍길동")
-            new_pw = st.text_input("비밀번호", type="password", key="reg_pw", placeholder="6자 이상")
-            new_pw2 = st.text_input("비밀번호 확인", type="password", key="reg_pw2", placeholder="비밀번호 재입력")
-            st.markdown(
-                "<p style='color:#888; font-size:0.9rem;'>※ 현재는 문자 인증 없이 휴대폰 번호와 비밀번호로 가입합니다.</p>",
-                unsafe_allow_html=True,
-            )
+            with st.form("register_form", clear_on_submit=False):
+                new_phone = phone_text_input("휴대폰 번호", key="reg_phone")
+                new_name = st.text_input("이름", key="reg_name", placeholder="홍길동")
+                new_pw = st.text_input("비밀번호", type="password", key="reg_pw", placeholder="6자 이상")
+                new_pw2 = st.text_input("비밀번호 확인", type="password", key="reg_pw2", placeholder="비밀번호 재입력")
+                st.markdown(
+                    "<p style='color:#888; font-size:0.9rem;'>※ 현재는 문자 인증 없이 휴대폰 번호와 비밀번호로 가입합니다.</p>",
+                    unsafe_allow_html=True,
+                )
+                register_submitted = st.form_submit_button("회원가입")
 
-            if st.button("회원가입", key="reg_btn"):
-                phone_digits = normalize_phone(new_phone)
+            if register_submitted:
+                phone_digits = normalize_phone(new_phone or st.session_state.get("reg_phone", ""))
+                name_value = (new_name or "").strip()
 
-                if not phone_digits or not new_name or not new_pw:
-                    st.error("모든 항목을 입력해주세요.")
+                if not phone_digits:
+                    st.error("휴대폰 번호를 입력해주세요.")
                 elif not is_valid_phone(phone_digits):
                     st.error("휴대폰 번호를 다시 확인해주세요. 예: 010-1234-5678")
+                elif not name_value:
+                    st.error("이름을 입력해주세요.")
+                elif not new_pw:
+                    st.error("비밀번호를 입력해주세요.")
+                elif not new_pw2:
+                    st.error("비밀번호 확인을 입력해주세요.")
                 elif new_pw != new_pw2:
                     st.error("비밀번호가 일치하지 않아요.")
                 elif len(new_pw) < 6:
@@ -313,7 +389,7 @@ def show_login():
                             "password": new_pw,
                             "options": {
                                 "data": {
-                                    "name": new_name,
+                                    "name": name_value,
                                     "phone": phone_digits,
                                     "login_type": "phone",
                                 }
