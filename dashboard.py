@@ -279,7 +279,7 @@ def is_valid_phone(phone_digits: str) -> bool:
 
 def phone_to_auth_email(phone_digits: str) -> str:
     """Supabase Auth는 이메일 로그인을 쓰되, 화면에서는 휴대폰번호만 받습니다."""
-    return f"{phone_digits}@eumi.local"
+    return f"{phone_digits}@eumi-login.com"
 
 
 def get_parent_url(parent_code: str) -> str:
