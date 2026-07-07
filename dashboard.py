@@ -1,604 +1,262 @@
-import hashlib
-import os
-import re
-from datetime import datetime, timedelta
-from typing import Any, Dict, List
 
-import pandas as pd
+import hashlib, json, os, re, tempfile
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 import streamlit as st
 import streamlit.components.v1 as components
+from PIL import Image
 from dotenv import load_dotenv
+from google import genai
 from supabase import create_client
 
 load_dotenv()
-
-# =========================================================
-# 기본 설정
-# =========================================================
-st.set_page_config(
-    page_title="이음이 — 자녀 대시보드",
-    page_icon="🔗",
-    layout="wide",
-)
-
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-AUTH_SECRET = os.getenv("AUTH_SECRET", "eumi-dev-secret-change-me")
-PARENT_APP_URL = os.getenv("PARENT_APP_URL", os.getenv("APP_URL", ""))
-
-SUPABASE_APP_KEY = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY
+GEMINI_API_KEY=os.getenv('GEMINI_API_KEY','')
+SUPABASE_URL=os.getenv('SUPABASE_URL','')
+SUPABASE_KEY=os.getenv('SUPABASE_KEY','')
+SUPABASE_SERVICE_ROLE_KEY=os.getenv('SUPABASE_SERVICE_ROLE_KEY','')
+AUTH_SECRET=os.getenv('AUTH_SECRET','eumi-dev-secret-change-me')
+SUPABASE_APP_KEY=SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY
 if not SUPABASE_URL or not SUPABASE_APP_KEY:
-    st.error("⚠️ SUPABASE_URL과 SUPABASE_KEY를 Streamlit Secrets에 넣어주세요.")
+    st.error('⚠️ SUPABASE_URL과 SUPABASE_KEY를 Streamlit Secrets에 넣어주세요.')
     st.stop()
+supabase=create_client(SUPABASE_URL, SUPABASE_APP_KEY)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_APP_KEY)
-
-# =========================================================
-# 디자인
-# =========================================================
-st.markdown(
-    """
+def apply_style(title, sub):
+    st.markdown(f'''
 <style>
-html, body, [class*="css"] { font-size: 23px !important; }
-[data-testid="stAppViewContainer"] { background-color: #FFF8F5; }
-[data-testid="stHeader"] { background-color: #FFF8F5; }
-[data-testid="stMarkdownContainer"], [data-testid="stCaptionContainer"], p, li, label, div { line-height: 1.7; }
-.metric-card {
-    background: white; border-radius: 18px; padding: 1.6rem;
-    border-left: 8px solid #E8543A; margin-bottom: 1rem; font-size: 1.4rem; line-height: 1.8;
-}
-.log-card {
-    background: white; border-radius: 14px; padding: 1.2rem 1.5rem;
-    margin-bottom: 1rem; border: 1px solid #F0E8E4; font-size: 1.3rem; line-height: 1.85;
-}
-.guide-card {
-    background:#FFF0EC; border-radius:16px; padding:1.5rem;
-    margin-bottom:1.2rem; font-size:1.35rem; line-height:1.95;
-}
-.folder-card {
-    background:#fff; border:2px solid #F0D8D0; border-radius:16px; padding:1.2rem 1.4rem;
-    margin:0.9rem 0; font-size:1.3rem; line-height:1.85;
-}
-.stButton > button {
-    background-color: #E8543A !important; color: white !important;
-    font-size: 1.35rem !important; font-weight: 800 !important;
-    border-radius: 14px !important; border: none !important;
-    width: 100% !important; padding: 0.95rem !important; min-height: 4rem !important;
-}
-.stTextInput > div > input { font-size: 1.3rem !important; border-radius: 12px !important; min-height: 3.2rem !important; }
-label, .stTextInput label { font-size: 1.3rem !important; font-weight: 700 !important; }
-button[data-baseweb="tab"] { font-size: 1.3rem !important; font-weight: 800 !important; padding-top: 0.6rem !important; padding-bottom: 0.8rem !important; }
-[data-testid="stAlertContainer"] p, [data-testid="stAlertContainer"] div { font-size: 1.25rem !important; }
-h1 { font-size: 3.2rem !important; }
-h2, h3, h4 { font-size: 2.1rem !important; }
+html, body, [class*="css"] {{ font-size:24px !important; }}
+[data-testid="stAppViewContainer"], [data-testid="stHeader"] {{ background:#FFF8F5; }}
+[data-testid="stMarkdownContainer"], p, li, label, div {{ line-height:1.75; }}
+.title-area {{ text-align:center; padding:1.4rem 0 1rem; }}
+.title-main {{ font-size:4.2rem; font-weight:900; color:#E8543A; line-height:1.1; }}
+.title-sub {{ font-size:1.8rem; color:#666; margin-top:.7rem; }}
+.guide-card,.folder-card,.log-card,.metric-card {{ background:#fff; border:2px solid #F0D8D0; border-radius:18px; padding:1.2rem 1.4rem; margin:.9rem 0; font-size:1.28rem; line-height:1.9; }}
+.guide-card {{ background:#FFF0EC; }}
+.answer-card {{ background:#fff; border-left:10px solid #E8543A; border-radius:0 22px 22px 0; padding:1.8rem 2rem; font-size:1.6rem; line-height:2; box-shadow:0 4px 20px rgba(0,0,0,.08); }}
+.small-note {{ color:#666; font-size:1.15rem; }}
+.stButton > button {{ background:#E8543A !important; color:#fff !important; font-size:1.35rem !important; font-weight:800 !important; border-radius:16px !important; min-height:4rem !important; width:100% !important; border:0 !important; }}
+.stTextInput > div > input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {{ font-size:1.3rem !important; border-radius:14px !important; min-height:3.3rem !important; }}
+label, .stTextInput label, .stTextArea label, .stSelectbox label {{ font-size:1.25rem !important; font-weight:700 !important; }}
+button[data-baseweb="tab"] {{ font-size:1.25rem !important; font-weight:800 !important; }}
+[data-testid="stFileUploader"] {{ background:#fff; border-radius:18px; padding:1.5rem; border:3px dashed #F0C4B8; }}
+[data-testid="stFileUploader"] * {{ font-size:1.25rem !important; }}
 </style>
-""",
-    unsafe_allow_html=True,
-)
+<div class="title-area"><div class="title-main">🔗 {title}</div><div class="title-sub">{sub}</div></div>
+''', unsafe_allow_html=True)
 
-
-def install_phone_input_guard() -> None:
-    """휴대폰 입력칸에서 숫자만 입력되고, 11자리 숫자를 010-0000-0000 형태로 즉시 표시합니다."""
-    components.html(
-        """
+def install_phone_input_guard():
+    components.html(r'''
 <script>
-(function () {
-  function digitsOnly(value) {
-    return (value || "").replace(/\D/g, "").slice(0, 11);
-  }
-
-  function formatPhone(value) {
-    const d = digitsOnly(value);
-    if (d.length <= 3) return d;
-    if (d.length <= 7) return d.slice(0, 3) + "-" + d.slice(3);
-    return d.slice(0, 3) + "-" + d.slice(3, 7) + "-" + d.slice(7, 11);
-  }
-
-  function bindPhoneInputs() {
-    const doc = window.parent.document;
-    const inputs = Array.from(doc.querySelectorAll('input[placeholder="010-0000-0000"]'));
-
-    inputs.forEach(function (input) {
-      if (input.dataset.eumiPhoneGuard === "1") return;
-      input.dataset.eumiPhoneGuard = "1";
-      input.setAttribute("inputmode", "numeric");
-      input.setAttribute("autocomplete", "tel");
-      input.setAttribute("maxlength", "13");
-
-      input.addEventListener("beforeinput", function (event) {
-        if (event.inputType && event.inputType.startsWith("delete")) return;
-        if (event.ctrlKey || event.metaKey || event.altKey) return;
-        const data = event.data || "";
-        if (data && /\D/.test(data)) {
-          event.preventDefault();
-        }
-        const currentDigits = digitsOnly(input.value);
-        if (data && /\d/.test(data) && currentDigits.length >= 11) {
-          event.preventDefault();
-        }
-      });
-
-      input.addEventListener("paste", function (event) {
-        event.preventDefault();
-        const pasted = (event.clipboardData || window.clipboardData).getData("text");
-        const formatted = formatPhone(pasted);
-        input.value = formatted;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-
-      input.addEventListener("input", function () {
-        const formatted = formatPhone(input.value);
-        if (input.value !== formatted) {
-          input.value = formatted;
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-        }
-      });
-
-      input.value = formatPhone(input.value);
-    });
-  }
-
-  bindPhoneInputs();
-  const timer = setInterval(bindPhoneInputs, 500);
-  setTimeout(function () { clearInterval(timer); }, 10000);
+(function(){
+function d(v){return (v||'').replace(/\D/g,'').slice(0,11)}
+function f(v){const x=d(v); if(x.length<=3)return x; if(x.length<=7)return x.slice(0,3)+'-'+x.slice(3); return x.slice(0,3)+'-'+x.slice(3,7)+'-'+x.slice(7,11)}
+function bind(){const doc=window.parent.document; doc.querySelectorAll('input[placeholder="010-0000-0000"]').forEach(function(i){
+ if(i.dataset.eumiPhoneGuard==='1')return; i.dataset.eumiPhoneGuard='1'; i.setAttribute('inputmode','numeric'); i.setAttribute('maxlength','13');
+ i.addEventListener('beforeinput',function(e){ if(e.inputType&&e.inputType.startsWith('delete'))return; if(e.ctrlKey||e.metaKey||e.altKey)return; const a=e.data||''; if(a&&/\D/.test(a))e.preventDefault(); if(a&&/\d/.test(a)&&d(i.value).length>=11)e.preventDefault(); });
+ i.addEventListener('paste',function(e){e.preventDefault(); const p=(e.clipboardData||window.clipboardData).getData('text'); i.value=f(p); i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new Event('change',{bubbles:true}));});
+ i.addEventListener('input',function(){const y=f(i.value); if(i.value!==y){i.value=y; i.dispatchEvent(new Event('input',{bubbles:true}));}}); i.value=f(i.value);
+});}
+bind(); const t=setInterval(bind,500); setTimeout(function(){clearInterval(t)},10000);
 })();
 </script>
-        """,
-        height=0,
-        width=0,
-    )
+''', height=0, width=0)
 
-# =========================================================
-# 세션
-# =========================================================
-if "child_user" not in st.session_state:
-    st.session_state.child_user = None
-if "page" not in st.session_state:
-    st.session_state.page = "login"
+def digits_only(v): return re.sub(r'\D','',v or '')[:11]
+def format_phone(v):
+    v=digits_only(v)
+    if len(v)<=3: return v
+    if len(v)<=7: return f'{v[:3]}-{v[3:]}'
+    return f'{v[:3]}-{v[3:7]}-{v[7:11]}'
+def normalize_phone_input(key):
+    raw=st.session_state.get(key,''); val=format_phone(raw)
+    if raw!=val: st.session_state[key]=val
+def phone_input(label,key):
+    val=st.text_input(label,key=key,placeholder='010-0000-0000',max_chars=13,help='숫자만 11자리까지 입력됩니다. - 는 자동으로 들어갑니다.',on_change=normalize_phone_input,args=(key,))
+    return digits_only(val)
+def hash_password(phone,pw): return hashlib.sha256(f'{AUTH_SECRET}:{phone}:{pw}'.encode()).hexdigest()
 
-# =========================================================
-# 공통 함수
-# =========================================================
-def digits_only(value: str) -> str:
-    return re.sub(r"\D", "", value or "")[:11]
-
-
-def format_phone(digits: str) -> str:
-    digits = digits_only(digits)
-    if len(digits) <= 3:
-        return digits
-    if len(digits) <= 7:
-        return f"{digits[:3]}-{digits[3:]}"
-    return f"{digits[:3]}-{digits[3:7]}-{digits[7:11]}"
-
-
-def normalize_phone_input(key: str) -> None:
-    raw = st.session_state.get(key, "")
-    formatted = format_phone(raw)
-    if raw != formatted:
-        st.session_state[key] = formatted
-
-
-def phone_input(label: str, key: str) -> str:
-    value = st.text_input(
-        label,
-        key=key,
-        placeholder="010-0000-0000",
-        help="숫자만 11자리까지 입력됩니다. - 는 자동으로 들어갑니다.",
-        max_chars=13,
-        on_change=normalize_phone_input,
-        args=(key,),
-    )
-    return digits_only(value)
-
-
-def hash_password(phone_digits: str, password: str) -> str:
-    raw = f"{AUTH_SECRET}:{phone_digits}:{password}".encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
-
-
-def create_user(role: str, phone_digits: str, name: str, password: str) -> Dict[str, Any]:
-    existing = supabase.table("eumi_users")\
-        .select("id")\
-        .eq("role", role)\
-        .eq("phone", phone_digits)\
-        .limit(1)\
-        .execute()
-    if existing.data:
-        raise ValueError("이미 가입된 휴대폰 번호입니다. 로그인해주세요.")
-
-    res = supabase.table("eumi_users").insert({
-        "role": role,
-        "phone": phone_digits,
-        "name": name.strip(),
-        "password_hash": hash_password(phone_digits, password),
-    }).execute()
-    if not res.data:
-        raise RuntimeError("계정을 만들지 못했습니다.")
+def create_user(phone,name,pw):
+    if supabase.table('eumi_users').select('id').eq('phone',phone).limit(1).execute().data: raise ValueError('이미 가입된 휴대폰 번호입니다. 로그인해주세요.')
+    res=supabase.table('eumi_users').insert({'phone':phone,'name':name.strip(),'password_hash':hash_password(phone,pw)}).execute()
+    if not res.data: raise RuntimeError('계정을 만들지 못했습니다.')
     return res.data[0]
+def login_user(phone,pw):
+    res=supabase.table('eumi_users').select('*').eq('phone',phone).limit(1).execute()
+    if not res.data: raise ValueError('가입되지 않은 휴대폰 번호입니다.')
+    user=res.data[0]
+    if user.get('password_hash')!=hash_password(phone,pw): raise ValueError('비밀번호가 틀렸습니다.')
+    activate_pending_signup_links(user); return user
 
+def get_user_by_phone(phone):
+    res=supabase.table('eumi_users').select('*').eq('phone',phone).limit(1).execute()
+    return res.data[0] if res.data else {}
 
-def login_user(role: str, phone_digits: str, password: str) -> Dict[str, Any]:
-    res = supabase.table("eumi_users")\
-        .select("*")\
-        .eq("role", role)\
-        .eq("phone", phone_digits)\
-        .limit(1)\
-        .execute()
-    if not res.data:
-        raise ValueError("가입되지 않은 휴대폰 번호입니다.")
-    user = res.data[0]
-    if user.get("password_hash") != hash_password(phone_digits, password):
-        raise ValueError("비밀번호가 틀렸습니다.")
-    return user
+def relation_input(prefix, opts):
+    selected=st.selectbox('관계 선택',opts,key=f'{prefix}_relation')
+    if selected=='기타': return st.text_input('관계명을 입력해주세요',key=f'{prefix}_relation_custom',placeholder='예: 장모님, 할머니, 보호자').strip()
+    return selected
 
+def upsert_family_link(caregiver_user_id,caree_user_id,caregiver_phone,caree_phone,relation_label,reverse_relation_label,requested_by_user_id,status):
+    q=supabase.table('family_links').select('id')
+    q=q.eq('caregiver_user_id',caregiver_user_id) if caregiver_user_id else q.eq('caregiver_phone',caregiver_phone)
+    q=q.eq('caree_user_id',caree_user_id) if caree_user_id else q.eq('caree_phone',caree_phone)
+    old=q.limit(1).execute().data
+    payload={'caregiver_user_id':caregiver_user_id,'caree_user_id':caree_user_id,'caregiver_phone':caregiver_phone,'caree_phone':caree_phone,'relation_label':relation_label,'reverse_relation_label':reverse_relation_label,'requested_by_user_id':requested_by_user_id,'status':status,'updated_at':datetime.now().isoformat()}
+    if old: supabase.table('family_links').update(payload).eq('id',old[0]['id']).execute()
+    else: supabase.table('family_links').insert(payload).execute()
 
-def get_parent_url(parent_code: str) -> str:
-    if PARENT_APP_URL:
-        return f"{PARENT_APP_URL}?code={parent_code}"
-    return "PARENT_APP_URL 환경변수를 설정하면 부모님용 주소가 자동으로 만들어집니다."
-
-
-def safe_parse_datetime(value: str):
+def activate_pending_signup_links(user):
     try:
-        return datetime.fromisoformat((value or "").replace("Z", "+00:00"))
-    except Exception:
-        return None
+        supabase.table('family_links').update({'caree_user_id':user['id'],'status':'pending','updated_at':datetime.now().isoformat()}).eq('caree_phone',user['phone']).is_('caree_user_id','null').execute()
+        supabase.table('family_links').update({'caregiver_user_id':user['id'],'status':'active','updated_at':datetime.now().isoformat()}).eq('caregiver_phone',user['phone']).is_('caregiver_user_id','null').execute()
+    except Exception: pass
 
+def add_parent_link(user,parent_phone,relation):
+    if len(parent_phone)!=11: raise ValueError('부모님 휴대폰 번호 11자리를 입력해주세요.')
+    if parent_phone==user.get('phone'): raise ValueError('본인 번호는 부모님으로 추가할 수 없습니다.')
+    if not relation: raise ValueError('관계를 선택하거나 입력해주세요.')
+    parent=get_user_by_phone(parent_phone)
+    upsert_family_link(user['id'], parent.get('id') if parent else None, user['phone'], parent_phone, relation, '자녀', user['id'], 'pending' if parent else 'pending_signup')
+    return '부모님께 연결 요청을 보냈습니다. 부모님이 앱에서 승인하면 기록을 볼 수 있어요.' if parent else '아직 가입하지 않은 번호입니다. 부모님이 이 번호로 가입하면 연결 요청이 표시됩니다.'
+def add_child_link(user,child_phone,relation):
+    if len(child_phone)!=11: raise ValueError('자녀 휴대폰 번호 11자리를 입력해주세요.')
+    if child_phone==user.get('phone'): raise ValueError('본인 번호는 자녀로 추가할 수 없습니다.')
+    if not relation: raise ValueError('관계를 선택하거나 입력해주세요.')
+    child=get_user_by_phone(child_phone)
+    upsert_family_link(child.get('id') if child else None, user['id'], child_phone, user['phone'], '부모님', relation, user['id'], 'active' if child else 'pending_signup')
+    return '자녀를 연결했습니다. 이제 자녀가 내 기록을 볼 수 있습니다.' if child else '자녀 번호를 등록했습니다. 자녀가 이 번호로 가입하면 자동으로 연결됩니다.'
+def load_pending_requests_for_me(uid): return supabase.table('family_links').select('*').eq('caree_user_id',uid).eq('status','pending').execute().data or []
+def approve_link(lid): supabase.table('family_links').update({'status':'active','updated_at':datetime.now().isoformat()}).eq('id',lid).execute()
+def reject_link(lid): supabase.table('family_links').update({'status':'rejected','updated_at':datetime.now().isoformat()}).eq('id',lid).execute()
+def load_parents_i_help(uid): return supabase.table('family_links').select('*').eq('caregiver_user_id',uid).eq('status','active').order('created_at',desc=True).execute().data or []
+def load_children_helping_me(uid): return supabase.table('family_links').select('*').eq('caree_user_id',uid).eq('status','active').order('created_at',desc=True).execute().data or []
+def get_user_name(uid, fallback=''):
+    if not uid: return format_phone(fallback) if fallback else '미가입 가족'
+    res=supabase.table('eumi_users').select('name,phone').eq('id',uid).limit(1).execute()
+    return (res.data[0].get('name') or format_phone(res.data[0].get('phone',''))) if res.data else (format_phone(fallback) if fallback else '가족')
+def load_logs_for_user(uid):
+    try: return supabase.table('usage_logs').select('*').eq('user_id',uid).order('created_at',desc=True).limit(500).execute().data or []
+    except Exception as e: st.error(f'사용 기록을 불러오지 못했습니다: {e}'); return []
+def safe_dt(v):
+    try: return datetime.fromisoformat((v or '').replace('Z','+00:00'))
+    except Exception: return None
 
-def load_links(child_user_id: str) -> List[Dict[str, Any]]:
+def show_log_summary(logs):
+    if not logs: st.markdown("<div class='guide-card'>아직 저장된 기록이 없습니다.</div>",unsafe_allow_html=True); return
+    counts={}
+    for log in logs:
+        label=f"{log.get('category') or '기타'} > {log.get('place_name') or '미분류'}"; counts[label]=counts.get(label,0)+1
+    st.markdown('### 자주 어려워한 곳')
+    for i,(label,count) in enumerate(sorted(counts.items(),key=lambda x:x[1],reverse=True)[:10],1): st.markdown(f"<div class='metric-card'><b>{i}. {label}</b><br>{count}회 질문</div>",unsafe_allow_html=True)
+    st.markdown('### 장소별 기록')
+    grouped={}
+    for log in logs:
+        label=f"{log.get('category') or '기타'} > {log.get('place_name') or '미분류'}"; grouped.setdefault(label,[]).append(log)
+    for folder,items in grouped.items():
+        with st.expander(f'📁 {folder} ({len(items)}회)',expanded=False):
+            for log in items[:50]:
+                dt=safe_dt(log.get('created_at','')); t=dt.strftime('%Y-%m-%d %H:%M') if dt else log.get('created_at','')
+                q=log.get('question') or ''; a=log.get('answer') or ''; title=log.get('short_title') or log.get('task_name') or '질문 기록'
+                st.markdown(f"<div class='log-card'><b>{title}</b><br><span class='small-note'>{t}</span><br><b>질문:</b> {q}<br><b>답변:</b> {a[:350]}{'...' if len(a)>350 else ''}</div>",unsafe_allow_html=True)
+
+def norm(v,default):
+    v=re.sub(r'\s+',' ',(v or '').strip())
+    return v[:30] if v else default
+def folder_key(c,p): return f"{norm(c,'기타')}__{norm(p,'미분류')}"
+def safe_json_loads(text):
+    cleaned=(text or '').strip(); cleaned=re.sub(r'^```(?:json)?','',cleaned).strip(); cleaned=re.sub(r'```$','',cleaned).strip(); m=re.search(r'\{.*\}',cleaned,flags=re.S)
+    try: return json.loads(m.group(0) if m else cleaned)
+    except Exception: return {}
+def classify_and_answer(image,question,prev):
+    if not GEMINI_API_KEY: raise RuntimeError('GEMINI_API_KEY가 설정되어 있지 않습니다.')
+    client=genai.Client(api_key=GEMINI_API_KEY); tmp_path=None
     try:
-        res = supabase.table("family_links")\
-            .select("*")\
-            .eq("child_user_id", child_user_id)\
-            .order("created_at", desc=True)\
-            .execute()
-        return res.data or []
-    except Exception as e:
-        st.error(f"부모님 연결 정보를 불러오지 못했습니다: {e}")
-        return []
+        with tempfile.NamedTemporaryFile(delete=False,suffix='.jpg') as tmp: image.convert('RGB').save(tmp.name,format='JPEG'); tmp_path=tmp.name
+        up=client.files.upload(file=tmp_path)
+        prev_text=''.join([f"이전 기록 {i}: {l.get('category')} > {l.get('place_name')}, {l.get('question')}, {(l.get('answer') or '')[:180]}\n" for i,l in enumerate(prev[:5],1)])
+        prompt=f'''사용자 질문: {question}\n이전 기록:\n{prev_text}\n아래 JSON 형식으로만 답하세요.\n{{"category":"키오스크/병원 앱/은행 앱/기차/교통/배달/쇼핑/주민센터/공공/기타","place_name":"식당명 또는 앱명, 모르면 미분류","task_name":"하려는 일","short_title":"짧은 제목","answer":"어르신에게 쉬운 말로 다음 행동 안내. 비슷한 이전 기록이 있으면 짧게 언급"}}'''
+        r=client.models.generate_content(model='gemini-2.5-flash',contents=[prompt,up],config={'system_instruction':'어르신에게 쉽고 짧게 안내하세요. 위치, 색깔, 버튼 이름을 구체적으로 말하세요.'})
+        p=safe_json_loads(r.text)
+        return {'category':norm(p.get('category',''),'기타'),'place_name':norm(p.get('place_name',''),'미분류'),'task_name':norm(p.get('task_name',''),'확인하기'),'short_title':norm(p.get('short_title',''),'화면 질문'),'answer':p.get('answer') or r.text or '답변을 만들지 못했습니다.'}
+    finally:
+        if tmp_path and os.path.exists(tmp_path): os.unlink(tmp_path)
+def save_usage_log(uid,q,result,has_image=True):
+    supabase.table('usage_logs').insert({'user_id':uid,'question':q,'answer':result.get('answer',''),'has_image':has_image,'category':result.get('category','기타'),'place_name':result.get('place_name','미분류'),'task_name':result.get('task_name','확인하기'),'short_title':result.get('short_title','화면 질문'),'folder_key':folder_key(result.get('category','기타'),result.get('place_name','미분류')),'created_at':datetime.now().isoformat()}).execute()
+def show_auth(session_key,title='이음이'):
+    install_phone_input_guard(); apply_style(title,'사진으로 도움받고, 기록을 가족과 함께 확인하세요')
+    _,col,_=st.columns([.3,4.4,.3])
+    with col:
+        t1,t2=st.tabs(['🔐 로그인','📝 처음 사용'])
+        with t1:
+            st.markdown('### 로그인'); phone=phone_input('휴대폰 번호',f'{session_key}_login_phone'); pw=st.text_input('비밀번호',type='password',key=f'{session_key}_login_pw')
+            if st.button('로그인',key=f'{session_key}_login_submit'):
+                try:
+                    if len(phone)!=11: raise ValueError('휴대폰 번호 11자리를 입력해주세요.')
+                    if not pw: raise ValueError('비밀번호를 입력해주세요.')
+                    st.session_state[session_key]=login_user(phone,pw); st.rerun()
+                except Exception as e: st.error(str(e))
+        with t2:
+            st.markdown('### 처음 사용하는 분'); phone=phone_input('휴대폰 번호',f'{session_key}_join_phone'); name=st.text_input('이름',key=f'{session_key}_join_name'); pw=st.text_input('비밀번호',type='password',key=f'{session_key}_join_pw',placeholder='6자 이상'); pw2=st.text_input('비밀번호 확인',type='password',key=f'{session_key}_join_pw2')
+            if st.button('계정 만들기',key=f'{session_key}_join_submit'):
+                try:
+                    if len(phone)!=11: raise ValueError('휴대폰 번호 11자리를 입력해주세요.')
+                    if not name.strip(): raise ValueError('이름을 입력해주세요.')
+                    if len(pw)<6: raise ValueError('비밀번호는 6자 이상이어야 해요.')
+                    if pw!=pw2: raise ValueError('비밀번호가 일치하지 않아요.')
+                    st.session_state[session_key]=create_user(phone,name,pw); st.rerun()
+                except Exception as e: st.error(f'회원가입 실패: {e}')
+def family_management_ui(user,prefix='family'):
+    install_phone_input_guard(); st.markdown('### 가족 관리'); st.markdown("<div class='guide-card'><b>부모님</b>은 내가 도와드릴 가족입니다.<br><b>자녀</b>는 내 기록을 함께 볼 가족입니다.</div>",unsafe_allow_html=True)
+    ptab,ctab,rtab=st.tabs(['👵 부모님','👨‍👩‍👧 자녀','✅ 연결 요청'])
+    with ptab:
+        st.markdown('#### 부모님 추가'); ph=phone_input('부모님 휴대폰 번호',f'{prefix}_parent_phone'); rel=relation_input(f'{prefix}_parent',['엄마','아빠','배우자','기타'])
+        if st.button('부모님 연결 요청',key=f'{prefix}_add_parent'):
+            try: st.success(add_parent_link(user,ph,rel)); st.rerun()
+            except Exception as e: st.error(str(e))
+        st.markdown('#### 내가 도와주는 부모님')
+        links=load_parents_i_help(user['id'])
+        if not links: st.info('아직 연결된 부모님이 없습니다.')
+        for l in links: st.markdown(f"<div class='folder-card'>👵 <b>{l.get('relation_label') or '부모님'}</b> — {get_user_name(l.get('caree_user_id'),l.get('caree_phone',''))}</div>",unsafe_allow_html=True)
+    with ctab:
+        st.markdown('#### 자녀 추가'); ph=phone_input('자녀 휴대폰 번호',f'{prefix}_child_phone'); rel=relation_input(f'{prefix}_child',['아들','딸','배우자','기타'])
+        if st.button('자녀 연결',key=f'{prefix}_add_child'):
+            try: st.success(add_child_link(user,ph,rel)); st.rerun()
+            except Exception as e: st.error(str(e))
+        st.markdown('#### 나를 도와주는 자녀')
+        links=load_children_helping_me(user['id'])
+        if not links: st.info('아직 연결된 자녀가 없습니다.')
+        for l in links: st.markdown(f"<div class='folder-card'>👨‍👩‍👧 <b>{l.get('reverse_relation_label') or '자녀'}</b> — {get_user_name(l.get('caregiver_user_id'),l.get('caregiver_phone',''))}</div>",unsafe_allow_html=True)
+    with rtab:
+        pending=load_pending_requests_for_me(user['id'])
+        if not pending: st.info('승인할 요청이 없습니다.')
+        for l in pending:
+            st.markdown(f"<div class='folder-card'><b>{get_user_name(l.get('caregiver_user_id'),l.get('caregiver_phone',''))}</b>님이 내 기록 연결을 요청했습니다.<br>관계: {l.get('relation_label') or '가족'}</div>",unsafe_allow_html=True)
+            a,b=st.columns(2)
+            with a:
+                if st.button('허용',key=f"approve_{l['id']}"): approve_link(l['id']); st.rerun()
+            with b:
+                if st.button('거절',key=f"reject_{l['id']}"): reject_link(l['id']); st.rerun()
 
-
-def load_logs(parent_user_id: str, parent_code: str) -> List[Dict[str, Any]]:
-    try:
-        query = supabase.table("usage_logs")\
-            .select("*")\
-            .order("created_at", desc=True)\
-            .limit(500)
-        if parent_user_id:
-            query = query.eq("parent_user_id", parent_user_id)
+st.set_page_config(page_title='이음이 — 가족 대시보드', page_icon='🔗', layout='wide')
+if 'dashboard_user' not in st.session_state: st.session_state.dashboard_user=None
+def logout(): st.session_state.dashboard_user=None; st.rerun()
+def show_dashboard():
+    install_phone_input_guard(); user=st.session_state.dashboard_user; apply_style('이음이',f"{user.get('name','사용자')}님의 가족 대시보드")
+    a,b=st.columns([4,1])
+    with a: st.markdown(f"<div class='small-note'><b>내 번호:</b> {format_phone(user.get('phone',''))}</div>",unsafe_allow_html=True)
+    with b:
+        if st.button('로그아웃'): logout()
+    parents,fam,my=st.tabs(['👵 부모님 기록','👨‍👩‍👧 가족 관리','📁 내 기록'])
+    with parents:
+        links=load_parents_i_help(user['id']); st.markdown('### 내가 도와주는 부모님')
+        if not links: st.markdown("<div class='guide-card'>아직 연결된 부모님이 없습니다.<br><b>가족 관리</b> 탭에서 부모님 전화번호를 입력해 연결 요청을 보내세요.</div>",unsafe_allow_html=True)
         else:
-            query = query.eq("parent_code", parent_code)
-        res = query.execute()
-        return res.data or []
-    except Exception as e:
-        st.error(f"사용 기록을 불러오지 못했습니다: {e}")
-        return []
-
-
-def find_parent_by_code(parent_code: str) -> Dict[str, Any]:
-    res = supabase.table("eumi_users")\
-        .select("id, name, phone, parent_code")\
-        .eq("role", "parent")\
-        .eq("parent_code", parent_code)\
-        .limit(1)\
-        .execute()
-    if not res.data:
-        return {}
-    return res.data[0]
-
-
-def logout() -> None:
-    st.session_state.child_user = None
-    st.session_state.page = "login"
-    st.rerun()
-
-# =========================================================
-# 헤더
-# =========================================================
-st.markdown(
-    """
-<h1 style='color:#E8543A; font-size:4rem; margin-bottom:0; font-weight:900;'>🔗 이음이</h1>
-<p style='color:#666; font-size:1.8rem; line-height:1.7;'>자녀용 케어 대시보드</p>
-<hr style='border:1px solid #F0E8E4;'>
-""",
-    unsafe_allow_html=True,
-)
-
-# =========================================================
-# 로그인 / 회원가입
-# =========================================================
-def show_login() -> None:
-    install_phone_input_guard()
-    col1, col2, col3 = st.columns([0.3, 4.4, 0.3])
-    with col2:
-        tab1, tab2 = st.tabs(["🔐 로그인", "📝 회원가입"])
-
-        with tab1:
-            st.markdown("#### 자녀 계정으로 로그인하세요")
-            phone = phone_input("휴대폰 번호", "child_login_phone")
-            password = st.text_input("비밀번호", type="password", key="child_login_pw", placeholder="비밀번호 입력")
-            submitted = st.button("로그인", key="child_login_submit")
-            if submitted:
-                if len(phone) != 11:
-                    st.error("휴대폰 번호 11자리를 입력해주세요.")
-                elif not password:
-                    st.error("비밀번호를 입력해주세요.")
-                else:
-                    try:
-                        st.session_state.child_user = login_user("child", phone, password)
-                        st.session_state.page = "dashboard"
-                        st.rerun()
-                    except Exception as e:
-                        st.error(str(e))
-
-        with tab2:
-            st.markdown("#### 새 계정을 만드세요")
-            phone = phone_input("휴대폰 번호", "child_join_phone")
-            name = st.text_input("이름", key="child_join_name", placeholder="홍길동")
-            pw = st.text_input("비밀번호", type="password", key="child_join_pw", placeholder="6자 이상")
-            pw2 = st.text_input("비밀번호 확인", type="password", key="child_join_pw2", placeholder="비밀번호 재입력")
-            submitted = st.button("회원가입", key="child_join_submit")
-            if submitted:
-                if len(phone) != 11:
-                    st.error("휴대폰 번호 11자리를 입력해주세요.")
-                elif not name.strip():
-                    st.error("이름을 입력해주세요.")
-                elif len(pw) < 6:
-                    st.error("비밀번호는 6자 이상이어야 해요.")
-                elif pw != pw2:
-                    st.error("비밀번호가 일치하지 않아요.")
-                else:
-                    try:
-                        st.session_state.child_user = create_user("child", phone, name, pw)
-                        st.session_state.page = "dashboard"
-                        st.success("회원가입이 완료되었습니다.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"회원가입 실패: {e}")
-
-# =========================================================
-# 부모님 연결
-# =========================================================
-def show_link_parent() -> None:
-    install_phone_input_guard()
-    child_user = st.session_state.child_user
-    child_user_id = child_user.get("id")
-
-    linked = load_links(child_user_id)
-
-    col1, col2, col3 = st.columns([0.3, 4.4, 0.3])
-    with col2:
-        st.markdown("#### 👴 부모님 연결하기")
-        st.markdown(
-            """
-<div class='guide-card'>
-<b>연결 방법</b><br>
-1. 부모님 휴대폰에서 <b>부모님용 이음이 앱</b>을 엽니다.<br>
-2. 부모님이 로그인한 뒤 <b>자녀 연결 코드</b> 탭을 누릅니다.<br>
-3. 표시된 코드를 아래에 입력합니다.<br>
-4. 한 번 연결하면 부모님 기록을 계속 볼 수 있습니다.
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-
-        if linked:
-            st.markdown("**연결된 부모님**")
-            for link in linked:
-                col_a, col_b = st.columns([3, 1])
-                parent_code = link.get("parent_code", "")
-                with col_a:
-                    st.markdown(f"👴 **{link.get('parent_name', '부모님')}** — 코드: `{parent_code}`")
-                with col_b:
-                    if st.button("연결 해제", key=f"unlink_{link['id']}"):
-                        supabase.table("family_links").delete().eq("id", link["id"]).execute()
-                        st.rerun()
-
-        st.markdown("---")
-        parent_name = st.text_input("부모님 이름", placeholder="예: 어머니, 아버지")
-        parent_code = st.text_input("부모님 연결 코드", placeholder="예: P-1A2B3C4D")
-
-        if st.button("연결하기"):
-            parent_code = parent_code.strip().upper()
-            if not parent_name or not parent_code:
-                st.error("이름과 코드를 모두 입력해주세요.")
-            else:
-                parent = find_parent_by_code(parent_code)
-                if not parent:
-                    st.error("코드를 찾을 수 없어요. 부모님 앱의 '자녀 연결 코드' 탭에서 코드를 다시 확인해주세요.")
-                else:
-                    exists = supabase.table("family_links")\
-                        .select("id")\
-                        .eq("child_user_id", child_user_id)\
-                        .eq("parent_code", parent_code)\
-                        .execute()
-                    if exists.data:
-                        st.warning("이미 연결된 부모님이에요.")
-                    else:
-                        supabase.table("family_links").insert({
-                            "child_user_id": child_user_id,
-                            "parent_user_id": parent.get("id"),
-                            "parent_code": parent_code,
-                            "parent_name": parent_name,
-                        }).execute()
-                        st.success(f"✅ {parent_name}님과 연결됐어요!")
-                        st.rerun()
-
-        if st.button("← 대시보드로 가기"):
-            st.session_state.page = "dashboard"
-            st.rerun()
-
-# =========================================================
-# 대시보드
-# =========================================================
-def show_dashboard() -> None:
-    child_user = st.session_state.child_user
-    user_name = child_user.get("name", "자녀")
-
-    col_title, col_btn1, col_btn2 = st.columns([4, 1, 1])
-    with col_title:
-        st.markdown(f"**{user_name}**님의 대시보드")
-    with col_btn1:
-        if st.button("👴 부모님 연결"):
-            st.session_state.page = "link"
-            st.rerun()
-    with col_btn2:
-        if st.button("로그아웃"):
-            logout()
-
-    linked = load_links(child_user.get("id"))
-    if not linked:
-        st.markdown(
-            """
-<div style='text-align:center; padding:3rem; color:#aaa; font-size:1.3rem;'>
-    👴 아직 부모님이 연결되지 않았어요.<br>
-    위의 <b>부모님 연결</b> 버튼을 눌러서 연결해주세요.
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-        return
-
-    parent_names = [l.get("parent_name", "부모님") for l in linked]
-    if len(parent_names) > 1:
-        selected_idx = st.radio("부모님 선택", range(len(parent_names)), format_func=lambda i: parent_names[i], horizontal=True)
-    else:
-        selected_idx = 0
-
-    selected = linked[selected_idx]
-    parent_name = selected.get("parent_name", "부모님")
-    parent_code = selected.get("parent_code", "")
-    parent_user_id = selected.get("parent_user_id", "")
-
-    st.markdown(f"### 👴 {parent_name}님 사용 현황")
-    st.caption(f"부모님 앱 주소: {get_parent_url(parent_code)}")
-
-    logs = load_logs(parent_user_id, parent_code)
-    if not logs:
-        st.markdown(
-            """
-<div style='text-align:center; padding:3rem; color:#aaa; font-size:1.2rem;'>
-    📱 아직 사용 기록이 없어요.<br>
-    부모님이 이음이에서 사진을 올리면 여기에 표시됩니다.
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-        return
-
-    today = datetime.now().date()
-    today_logs = []
-    week_logs = []
-    for log in logs:
-        dt = safe_parse_datetime(log.get("created_at", ""))
-        if not dt:
-            continue
-        if dt.date() == today:
-            today_logs.append(log)
-        if dt.date() >= today - timedelta(days=7):
-            week_logs.append(log)
-
-    image_logs = [l for l in logs if l.get("has_image")]
-    folders: Dict[str, List[Dict[str, Any]]] = {}
-    for log in logs:
-        key = log.get("folder_key") or f"{log.get('category', '기타')}__{log.get('place_name', '미분류')}"
-        folders.setdefault(key, []).append(log)
-
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(f"""
-        <div class='metric-card'><p style='color:#888; margin:0;'>오늘 질문</p>
-        <p style='color:#E8543A; font-size:2.3rem; font-weight:700; margin:0;'>{len(today_logs)}번</p></div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"""
-        <div class='metric-card'><p style='color:#888; margin:0;'>이번 주 사용</p>
-        <p style='color:#E8543A; font-size:2.3rem; font-weight:700; margin:0;'>{len(week_logs)}번</p></div>
-        """, unsafe_allow_html=True)
-    with col3:
-        st.markdown(f"""
-        <div class='metric-card'><p style='color:#888; margin:0;'>사진 질문</p>
-        <p style='color:#E8543A; font-size:2.3rem; font-weight:700; margin:0;'>{len(image_logs)}번</p></div>
-        """, unsafe_allow_html=True)
-    with col4:
-        st.markdown(f"""
-        <div class='metric-card'><p style='color:#888; margin:0;'>기록 폴더</p>
-        <p style='color:#E8543A; font-size:2.3rem; font-weight:700; margin:0;'>{len(folders)}개</p></div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    tab_summary, tab_folder, tab_recent = st.tabs(["📊 자주 어려워한 곳", "📁 장소별 기록", "📋 최근 기록"])
-
-    with tab_summary:
-        st.markdown("#### 부모님이 자주 어려워한 화면")
-        folder_rows = []
-        for key, items in folders.items():
-            sample = items[0]
-            folder_rows.append({
-                "분류": sample.get("category", "기타"),
-                "장소/앱": sample.get("place_name", "미분류"),
-                "질문 횟수": len(items),
-                "최근 질문": (items[0].get("created_at") or "")[:10],
-            })
-        df = pd.DataFrame(folder_rows).sort_values("질문 횟수", ascending=False)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-
-        top = folder_rows[0] if folder_rows else None
-        if top:
-            st.info(f"가장 많이 어려워한 곳은 **{top['분류']} > {top['장소/앱']}** 입니다.")
-
-    with tab_folder:
-        folder_options = []
-        for key, items in sorted(folders.items(), key=lambda x: len(x[1]), reverse=True):
-            sample = items[0]
-            label = f"📁 {sample.get('category', '기타')} > {sample.get('place_name', '미분류')} ({len(items)}회)"
-            folder_options.append((label, key))
-
-        selected_label = st.selectbox("폴더 선택", [x[0] for x in folder_options])
-        selected_key = dict(folder_options)[selected_label]
-        selected_logs = folders[selected_key]
-
-        for log in selected_logs:
-            title = log.get("short_title") or log.get("task_name") or "질문"
-            created = (log.get("created_at") or "")[:16].replace("T", " ")
-            with st.expander(f"{created} · {title}"):
-                st.markdown(f"**하려던 일**: {log.get('task_name', '')}")
-                st.markdown(f"**질문**: {log.get('question', '')}")
-                st.markdown("**AI 답변**")
-                st.write(log.get("answer", ""))
-
-    with tab_recent:
-        st.markdown("#### 최근 사용 기록")
-        for log in logs[:30]:
-            time_str = (log.get("created_at") or "")[:16].replace("T", " ")
-            icon = "📷" if log.get("has_image") else "💬"
-            category = log.get("category", "기타")
-            place = log.get("place_name", "미분류")
-            title = log.get("short_title") or log.get("task_name") or "질문"
-            answer = log.get("answer", "")
-            answer_short = answer[:130] + "..." if len(answer) > 130 else answer
-            st.markdown(
-                f"""
-<div class='log-card'>
-    <p style='color:#888; font-size:0.9rem; margin:0 0 0.3rem;'>{icon} {time_str} · {category} &gt; {place}</p>
-    <p style='font-weight:700; margin:0 0 0.3rem;'>{title}</p>
-    <p style='margin:0 0 0.3rem;'>질문: {log.get('question', '')}</p>
-    <p style='color:#555; margin:0;'>답변: {answer_short}</p>
-</div>
-""",
-                unsafe_allow_html=True,
-            )
-
-# =========================================================
-# 라우팅
-# =========================================================
-if st.session_state.child_user is None:
-    show_login()
-elif st.session_state.page == "link":
-    show_link_parent()
-else:
-    show_dashboard()
+            labels=[]; ids={}
+            for l in links:
+                pid=l.get('caree_user_id'); label=f"{l.get('relation_label') or '부모님'} — {get_user_name(pid,l.get('caree_phone',''))}"; labels.append(label); ids[label]=pid
+            sel=st.radio('기록을 볼 가족 선택',labels,horizontal=True); pid=ids.get(sel)
+            if pid: st.markdown(f'## {sel} 기록'); show_log_summary(load_logs_for_user(pid))
+    with fam: family_management_ui(user,'dash_family')
+    with my: st.markdown('### 내 기록'); show_log_summary(load_logs_for_user(user['id']))
+if st.session_state.dashboard_user is None: show_auth('dashboard_user','이음이')
+else: show_dashboard()
