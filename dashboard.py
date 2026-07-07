@@ -1,10 +1,11 @@
+import hashlib
 import os
 import re
 from datetime import datetime, timedelta
+from typing import Any, Dict, List
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from supabase import create_client
 
@@ -21,77 +22,16 @@ st.set_page_config(
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+AUTH_SECRET = os.getenv("AUTH_SECRET", "eumi-dev-secret-change-me")
 PARENT_APP_URL = os.getenv("PARENT_APP_URL", os.getenv("APP_URL", ""))
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("⚠️ 환경변수에 SUPABASE_URL과 SUPABASE_KEY를 넣어주세요.")
+SUPABASE_APP_KEY = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY
+if not SUPABASE_URL or not SUPABASE_APP_KEY:
+    st.error("⚠️ SUPABASE_URL과 SUPABASE_SERVICE_ROLE_KEY를 Streamlit Secrets에 넣어주세요.")
     st.stop()
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
-# =========================================================
-# Streamlit 단축키 오작동 방지
-# =========================================================
-def disable_streamlit_clear_cache_shortcut() -> None:
-    """Ctrl+C 복사 시 Streamlit의 Clear caches 창이 뜨지 않도록 막습니다."""
-    components.html(
-        """
-<script>
-(function () {
-  const parentWindow = window.parent;
-  const doc = parentWindow.document;
-
-  if (parentWindow.__eumiClearCacheGuardInstalled) return;
-  parentWindow.__eumiClearCacheGuardInstalled = true;
-
-  function closeClearCacheDialog() {
-    const dialogs = Array.from(doc.querySelectorAll('[role="dialog"], [aria-modal="true"]'));
-    dialogs.forEach(function (dialog) {
-      const text = dialog.innerText || '';
-      if (text.indexOf('Clear caches') === -1) return;
-
-      const buttons = Array.from(dialog.querySelectorAll('button'));
-      const cancelButton = buttons.find(function (btn) {
-        return (btn.innerText || '').trim().toLowerCase() === 'cancel';
-      });
-
-      if (cancelButton) {
-        cancelButton.click();
-        return;
-      }
-
-      const closeButton = buttons.find(function (btn) {
-        return (btn.getAttribute('aria-label') || '').toLowerCase().includes('close') ||
-               (btn.innerText || '').trim() === '×' ||
-               (btn.innerText || '').trim().toLowerCase() === 'x';
-      });
-      if (closeButton) closeButton.click();
-    });
-  }
-
-  doc.addEventListener('keydown', function (event) {
-    const key = (event.key || '').toLowerCase();
-    if ((event.ctrlKey || event.metaKey) && key === 'c') {
-      // 복사 기본 기능은 그대로 두고, Streamlit 단축키 처리만 막습니다.
-      event.stopPropagation();
-      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      setTimeout(closeClearCacheDialog, 0);
-      setTimeout(closeClearCacheDialog, 80);
-    }
-  }, true);
-
-  closeClearCacheDialog();
-  const observer = new MutationObserver(closeClearCacheDialog);
-  observer.observe(doc.body, { childList: true, subtree: true });
-})();
-</script>
-        """,
-        height=0,
-        width=0,
-    )
-
-disable_streamlit_clear_cache_shortcut()
+supabase = create_client(SUPABASE_URL, SUPABASE_APP_KEY)
 
 # =========================================================
 # 디자인
@@ -114,6 +54,10 @@ html, body, [class*="css"] { font-size: 18px !important; }
     background:#FFF0EC; border-radius:12px; padding:1.2rem;
     margin-bottom:1rem; font-size:1rem; line-height:1.8;
 }
+.folder-card {
+    background:#fff; border:1px solid #F0D8D0; border-radius:14px; padding:1rem 1.2rem;
+    margin:0.7rem 0; line-height:1.7;
+}
 .stButton > button {
     background-color: #E8543A !important; color: white !important;
     font-size: 1.05rem !important; font-weight: 700 !important;
@@ -129,157 +73,85 @@ html, body, [class*="css"] { font-size: 18px !important; }
 # =========================================================
 # 세션
 # =========================================================
-if "user" not in st.session_state:
-    st.session_state.user = None
+if "child_user" not in st.session_state:
+    st.session_state.child_user = None
 if "page" not in st.session_state:
     st.session_state.page = "login"
 
 # =========================================================
 # 공통 함수
 # =========================================================
-def safe_parse_datetime(value: str):
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except Exception:
-        return None
+def digits_only(value: str) -> str:
+    return re.sub(r"\D", "", value or "")[:11]
 
 
-def normalize_phone(phone: str) -> str:
-    """휴대폰 번호에서 숫자만 남기고, 국내 010 번호 형태로 정리합니다."""
-    digits = re.sub(r"\D", "", phone or "")
-
-    # +82 10-1234-5678 형태로 들어온 경우 01012345678로 변환
-    if digits.startswith("82") and len(digits) >= 11:
-        digits = "0" + digits[2:]
-
-    return digits
-
-
-
-
-def format_phone_digits(phone_digits: str) -> str:
-    """숫자 10~11자리를 화면 표시용 휴대폰 번호로 바꿉니다."""
-    digits = re.sub(r"\D", "", phone_digits or "")[:11]
-
+def format_phone(digits: str) -> str:
+    digits = digits_only(digits)
     if len(digits) <= 3:
         return digits
     if len(digits) <= 7:
         return f"{digits[:3]}-{digits[3:]}"
-    if len(digits) == 10:
-        return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
-    return f"{digits[:3]}-{digits[3:7]}-{digits[7:]}"
+    return f"{digits[:3]}-{digits[3:7]}-{digits[7:11]}"
 
 
-def clean_phone_input(key: str):
-    """Streamlit 입력값에서 숫자만 남기고 11자리까지만 보관한 뒤 하이픈을 자동 표시합니다."""
-    digits = re.sub(r"\D", "", st.session_state.get(key, "") or "")[:11]
-    st.session_state[key] = format_phone_digits(digits)
+def normalize_phone_input(key: str) -> None:
+    raw = st.session_state.get(key, "")
+    formatted = format_phone(raw)
+    if raw != formatted:
+        st.session_state[key] = formatted
 
 
-def inject_phone_input_guard():
-    """
-    Streamlit 기본 입력창에 휴대폰 번호 전용 입력 제한을 입힙니다.
-    - 키보드 입력: 숫자만 허용
-    - 실제 숫자: 11자리까지만 허용
-    - 화면 표시: 010-1234-5678 형태로 자동 하이픈 처리
-    """
-    components.html(
-        """
-<script>
-(function () {
-  function onlyDigits(value) {
-    return (value || '').replace(/\D/g, '').slice(0, 11);
-  }
-
-  function formatPhone(value) {
-    const d = onlyDigits(value);
-    if (d.length <= 3) return d;
-    if (d.length <= 7) return d.slice(0, 3) + '-' + d.slice(3);
-    if (d.length === 10) return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
-    return d.slice(0, 3) + '-' + d.slice(3, 7) + '-' + d.slice(7);
-  }
-
-  function setNativeValue(input, value) {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    setter.call(input, value);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
-  function attach(input) {
-    if (!input || input.dataset.eumiPhoneGuard === '1') return;
-    input.dataset.eumiPhoneGuard = '1';
-    input.setAttribute('inputmode', 'numeric');
-    input.setAttribute('pattern', '[0-9]*');
-    input.setAttribute('autocomplete', 'tel');
-    input.setAttribute('maxlength', '13'); // 화면에는 하이픈 2개가 자동으로 들어가므로 표시 길이는 13입니다. 숫자는 아래 로직에서 11자리로 제한합니다.
-
-    input.addEventListener('beforeinput', function (e) {
-      if (e.inputType && e.inputType.indexOf('delete') === 0) return;
-      if (e.data && /\D/.test(e.data)) {
-        e.preventDefault();
-        return;
-      }
-      const selected = Math.max(0, (input.selectionEnd || 0) - (input.selectionStart || 0));
-      const selectedDigits = (input.value.slice(input.selectionStart || 0, input.selectionEnd || 0).match(/\d/g) || []).length;
-      const currentDigits = onlyDigits(input.value).length;
-      const incomingDigits = (e.data || '').replace(/\D/g, '').length;
-      if (currentDigits - selectedDigits + incomingDigits > 11) {
-        e.preventDefault();
-      }
-    });
-
-    input.addEventListener('paste', function (e) {
-      e.preventDefault();
-      const text = (e.clipboardData || window.clipboardData).getData('text');
-      setNativeValue(input, formatPhone(text));
-    });
-
-    input.addEventListener('input', function () {
-      const formatted = formatPhone(input.value);
-      if (input.value !== formatted) {
-        setNativeValue(input, formatted);
-      }
-    });
-
-    const formatted = formatPhone(input.value);
-    if (input.value !== formatted) setNativeValue(input, formatted);
-  }
-
-  function scan() {
-    const doc = window.parent.document;
-    doc.querySelectorAll('input[aria-label="휴대폰 번호"]').forEach(attach);
-  }
-
-  scan();
-  const timer = setInterval(scan, 400);
-  setTimeout(function () { clearInterval(timer); }, 15000);
-})();
-</script>
-        """,
-        height=0,
-        width=0,
-    )
-
-
-def phone_text_input(label: str, key: str, placeholder: str = "010-1234-5678") -> str:
-    """휴대폰 번호 전용 입력창: 숫자 11자리까지만 입력받고 하이픈은 자동 표시합니다."""
-    return st.text_input(
+def phone_input(label: str, key: str) -> str:
+    value = st.text_input(
         label,
         key=key,
-        placeholder=placeholder,
-        max_chars=13,
-        help="숫자 11자리까지만 입력하세요. 하이픈(-)은 자동으로 붙습니다.",
+        placeholder="010-0000-0000",
+        help="숫자 11자리까지만 입력하세요. - 는 자동으로 정리됩니다.",
+        on_change=normalize_phone_input,
+        args=(key,),
     )
-
-def is_valid_phone(phone_digits: str) -> bool:
-    # MVP에서는 국내 휴대폰 010/011/016/017/018/019, 10~11자리 정도만 허용
-    return phone_digits.startswith("01") and len(phone_digits) in (10, 11)
+    return digits_only(value)
 
 
-def phone_to_auth_email(phone_digits: str) -> str:
-    """Supabase Auth는 이메일 로그인을 쓰되, 화면에서는 휴대폰번호만 받습니다."""
-    return f"{phone_digits}@eumi-login.com"
+def hash_password(phone_digits: str, password: str) -> str:
+    raw = f"{AUTH_SECRET}:{phone_digits}:{password}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def create_user(role: str, phone_digits: str, name: str, password: str) -> Dict[str, Any]:
+    existing = supabase.table("eumi_users")\
+        .select("id")\
+        .eq("role", role)\
+        .eq("phone", phone_digits)\
+        .limit(1)\
+        .execute()
+    if existing.data:
+        raise ValueError("이미 가입된 휴대폰 번호입니다. 로그인해주세요.")
+
+    res = supabase.table("eumi_users").insert({
+        "role": role,
+        "phone": phone_digits,
+        "name": name.strip(),
+        "password_hash": hash_password(phone_digits, password),
+    }).execute()
+    if not res.data:
+        raise RuntimeError("계정을 만들지 못했습니다.")
+    return res.data[0]
+
+
+def login_user(role: str, phone_digits: str, password: str) -> Dict[str, Any]:
+    res = supabase.table("eumi_users")\
+        .select("*")\
+        .eq("role", role)\
+        .eq("phone", phone_digits)\
+        .limit(1)\
+        .execute()
+    if not res.data:
+        raise ValueError("가입되지 않은 휴대폰 번호입니다.")
+    user = res.data[0]
+    if user.get("password_hash") != hash_password(phone_digits, password):
+        raise ValueError("비밀번호가 틀렸습니다.")
+    return user
 
 
 def get_parent_url(parent_code: str) -> str:
@@ -288,19 +160,59 @@ def get_parent_url(parent_code: str) -> str:
     return "PARENT_APP_URL 환경변수를 설정하면 부모님용 주소가 자동으로 만들어집니다."
 
 
-@st.cache_data(ttl=60)
-def load_logs(parent_code: str):
+def safe_parse_datetime(value: str):
     try:
-        result = supabase.table("usage_logs")\
-            .select("*")\
-            .eq("user_id", parent_code)\
-            .order("created_at", desc=True)\
-            .limit(200)\
-            .execute()
-        return result.data or []
+        return datetime.fromisoformat((value or "").replace("Z", "+00:00"))
     except Exception:
+        return None
+
+
+def load_links(child_user_id: str) -> List[Dict[str, Any]]:
+    try:
+        res = supabase.table("family_links")\
+            .select("*")\
+            .eq("child_user_id", child_user_id)\
+            .order("created_at", desc=True)\
+            .execute()
+        return res.data or []
+    except Exception as e:
+        st.error(f"부모님 연결 정보를 불러오지 못했습니다: {e}")
         return []
 
+
+def load_logs(parent_user_id: str, parent_code: str) -> List[Dict[str, Any]]:
+    try:
+        query = supabase.table("usage_logs")\
+            .select("*")\
+            .order("created_at", desc=True)\
+            .limit(500)
+        if parent_user_id:
+            query = query.eq("parent_user_id", parent_user_id)
+        else:
+            query = query.eq("parent_code", parent_code)
+        res = query.execute()
+        return res.data or []
+    except Exception as e:
+        st.error(f"사용 기록을 불러오지 못했습니다: {e}")
+        return []
+
+
+def find_parent_by_code(parent_code: str) -> Dict[str, Any]:
+    res = supabase.table("eumi_users")\
+        .select("id, name, phone, parent_code")\
+        .eq("role", "parent")\
+        .eq("parent_code", parent_code)\
+        .limit(1)\
+        .execute()
+    if not res.data:
+        return {}
+    return res.data[0]
+
+
+def logout() -> None:
+    st.session_state.child_user = None
+    st.session_state.page = "login"
+    st.rerun()
 
 # =========================================================
 # 헤더
@@ -317,103 +229,67 @@ st.markdown(
 # =========================================================
 # 로그인 / 회원가입
 # =========================================================
-def show_login():
-    inject_phone_input_guard()
+def show_login() -> None:
+    if SUPABASE_SERVICE_ROLE_KEY == "":
+        st.warning("⚠️ 이번 버전은 SUPABASE_SERVICE_ROLE_KEY 사용을 권장합니다. Streamlit Secrets에 추가해주세요.")
+
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         tab1, tab2 = st.tabs(["🔐 로그인", "📝 회원가입"])
 
         with tab1:
             st.markdown("#### 자녀 계정으로 로그인하세요")
-            with st.form("login_form", clear_on_submit=False):
-                phone = phone_text_input("휴대폰 번호", key="login_phone")
-                password = st.text_input("비밀번호", type="password", key="login_pw", placeholder="비밀번호 입력")
-                login_submitted = st.form_submit_button("로그인")
-
-            if login_submitted:
-                phone_digits = normalize_phone(phone or st.session_state.get("login_phone", ""))
-
-                if not phone_digits:
-                    st.error("휴대폰 번호를 입력해주세요.")
-                elif not is_valid_phone(phone_digits):
-                    st.error("휴대폰 번호를 다시 확인해주세요. 예: 010-1234-5678")
+            with st.form("child_login_form"):
+                phone = phone_input("휴대폰 번호", "child_login_phone")
+                password = st.text_input("비밀번호", type="password", key="child_login_pw", placeholder="비밀번호 입력")
+                submitted = st.form_submit_button("로그인")
+            if submitted:
+                if len(phone) != 11:
+                    st.error("휴대폰 번호 11자리를 입력해주세요.")
                 elif not password:
                     st.error("비밀번호를 입력해주세요.")
                 else:
                     try:
-                        res = supabase.auth.sign_in_with_password({
-                            "email": phone_to_auth_email(phone_digits),
-                            "password": password,
-                        })
-                        st.session_state.user = res.user
+                        st.session_state.child_user = login_user("child", phone, password)
                         st.session_state.page = "dashboard"
                         st.rerun()
-                    except Exception:
-                        st.error("휴대폰 번호 또는 비밀번호가 틀렸어요.")
+                    except Exception as e:
+                        st.error(str(e))
 
         with tab2:
             st.markdown("#### 새 계정을 만드세요")
-            with st.form("register_form", clear_on_submit=False):
-                new_phone = phone_text_input("휴대폰 번호", key="reg_phone")
-                new_name = st.text_input("이름", key="reg_name", placeholder="홍길동")
-                new_pw = st.text_input("비밀번호", type="password", key="reg_pw", placeholder="6자 이상")
-                new_pw2 = st.text_input("비밀번호 확인", type="password", key="reg_pw2", placeholder="비밀번호 재입력")
-                st.markdown(
-                    "<p style='color:#888; font-size:0.9rem;'>※ 현재는 문자 인증 없이 휴대폰 번호와 비밀번호로 가입합니다.</p>",
-                    unsafe_allow_html=True,
-                )
-                register_submitted = st.form_submit_button("회원가입")
-
-            if register_submitted:
-                phone_digits = normalize_phone(new_phone or st.session_state.get("reg_phone", ""))
-                name_value = (new_name or "").strip()
-
-                if not phone_digits:
-                    st.error("휴대폰 번호를 입력해주세요.")
-                elif not is_valid_phone(phone_digits):
-                    st.error("휴대폰 번호를 다시 확인해주세요. 예: 010-1234-5678")
-                elif not name_value:
+            with st.form("child_join_form"):
+                phone = phone_input("휴대폰 번호", "child_join_phone")
+                name = st.text_input("이름", key="child_join_name", placeholder="홍길동")
+                pw = st.text_input("비밀번호", type="password", key="child_join_pw", placeholder="6자 이상")
+                pw2 = st.text_input("비밀번호 확인", type="password", key="child_join_pw2", placeholder="비밀번호 재입력")
+                submitted = st.form_submit_button("회원가입")
+            if submitted:
+                if len(phone) != 11:
+                    st.error("휴대폰 번호 11자리를 입력해주세요.")
+                elif not name.strip():
                     st.error("이름을 입력해주세요.")
-                elif not new_pw:
-                    st.error("비밀번호를 입력해주세요.")
-                elif not new_pw2:
-                    st.error("비밀번호 확인을 입력해주세요.")
-                elif new_pw != new_pw2:
-                    st.error("비밀번호가 일치하지 않아요.")
-                elif len(new_pw) < 6:
+                elif len(pw) < 6:
                     st.error("비밀번호는 6자 이상이어야 해요.")
+                elif pw != pw2:
+                    st.error("비밀번호가 일치하지 않아요.")
                 else:
                     try:
-                        supabase.auth.sign_up({
-                            "email": phone_to_auth_email(phone_digits),
-                            "password": new_pw,
-                            "options": {
-                                "data": {
-                                    "name": name_value,
-                                    "phone": phone_digits,
-                                    "login_type": "phone",
-                                }
-                            },
-                        })
-                        st.success("✅ 회원가입 완료! 이제 휴대폰 번호와 비밀번호로 로그인해주세요.")
+                        st.session_state.child_user = create_user("child", phone, name, pw)
+                        st.session_state.page = "dashboard"
+                        st.success("회원가입이 완료되었습니다.")
+                        st.rerun()
                     except Exception as e:
-                        err = str(e)
-                        if "already" in err.lower() or "registered" in err.lower():
-                            st.error("이미 가입된 휴대폰 번호입니다. 로그인해주세요.")
-                        else:
-                            st.error(f"회원가입 실패: {e}")
-
+                        st.error(f"회원가입 실패: {e}")
 
 # =========================================================
 # 부모님 연결
 # =========================================================
-def show_link_parent():
-    user_id = st.session_state.user.id
+def show_link_parent() -> None:
+    child_user = st.session_state.child_user
+    child_user_id = child_user.get("id")
 
-    linked = supabase.table("family_links")\
-        .select("*")\
-        .eq("child_user_id", user_id)\
-        .execute()
+    linked = load_links(child_user_id)
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -422,20 +298,20 @@ def show_link_parent():
             """
 <div class='guide-card'>
 <b>연결 방법</b><br>
-1. 부모님 휴대폰에서 <b>이음이 웹앱</b>을 엽니다.<br>
-2. 상단의 <b>자녀 연결 코드</b> 탭을 누릅니다.<br>
-3. 표시된 코드를 아래에 입력합니다.<br><br>
-※ 이제 카카오톡 '내코드'가 아니라 웹앱의 연결 코드를 사용합니다.
+1. 부모님 휴대폰에서 <b>부모님용 이음이 앱</b>을 엽니다.<br>
+2. 부모님이 로그인한 뒤 <b>자녀 연결 코드</b> 탭을 누릅니다.<br>
+3. 표시된 코드를 아래에 입력합니다.<br>
+4. 한 번 연결하면 부모님 기록을 계속 볼 수 있습니다.
 </div>
 """,
             unsafe_allow_html=True,
         )
 
-        if linked.data:
+        if linked:
             st.markdown("**연결된 부모님**")
-            for link in linked.data:
+            for link in linked:
                 col_a, col_b = st.columns([3, 1])
-                parent_code = link.get("parent_kakao_id", "")
+                parent_code = link.get("parent_code", "")
                 with col_a:
                     st.markdown(f"👴 **{link.get('parent_name', '부모님')}** — 코드: `{parent_code}`")
                 with col_b:
@@ -452,27 +328,22 @@ def show_link_parent():
             if not parent_name or not parent_code:
                 st.error("이름과 코드를 모두 입력해주세요.")
             else:
-                check = supabase.table("usage_logs")\
-                    .select("user_id")\
-                    .eq("user_id", parent_code)\
-                    .limit(1)\
-                    .execute()
-
-                if not check.data:
-                    st.error("코드를 찾을 수 없어요. 부모님 웹앱의 '자녀 연결 코드' 탭에서 코드를 먼저 확인해주세요.")
+                parent = find_parent_by_code(parent_code)
+                if not parent:
+                    st.error("코드를 찾을 수 없어요. 부모님 앱의 '자녀 연결 코드' 탭에서 코드를 다시 확인해주세요.")
                 else:
                     exists = supabase.table("family_links")\
                         .select("id")\
-                        .eq("child_user_id", user_id)\
-                        .eq("parent_kakao_id", parent_code)\
+                        .eq("child_user_id", child_user_id)\
+                        .eq("parent_code", parent_code)\
                         .execute()
-
                     if exists.data:
                         st.warning("이미 연결된 부모님이에요.")
                     else:
                         supabase.table("family_links").insert({
-                            "child_user_id": user_id,
-                            "parent_kakao_id": parent_code,
+                            "child_user_id": child_user_id,
+                            "parent_user_id": parent.get("id"),
+                            "parent_code": parent_code,
                             "parent_name": parent_name,
                         }).execute()
                         st.success(f"✅ {parent_name}님과 연결됐어요!")
@@ -482,13 +353,12 @@ def show_link_parent():
             st.session_state.page = "dashboard"
             st.rerun()
 
-
 # =========================================================
 # 대시보드
 # =========================================================
-def show_dashboard():
-    user_id = st.session_state.user.id
-    user_name = st.session_state.user.user_metadata.get("name", "자녀")
+def show_dashboard() -> None:
+    child_user = st.session_state.child_user
+    user_name = child_user.get("name", "자녀")
 
     col_title, col_btn1, col_btn2 = st.columns([4, 1, 1])
     with col_title:
@@ -499,51 +369,42 @@ def show_dashboard():
             st.rerun()
     with col_btn2:
         if st.button("로그아웃"):
-            st.session_state.user = None
-            st.session_state.page = "login"
-            supabase.auth.sign_out()
-            st.rerun()
+            logout()
 
-    linked = supabase.table("family_links")\
-        .select("*")\
-        .eq("child_user_id", user_id)\
-        .execute()
-
-    if not linked.data:
+    linked = load_links(child_user.get("id"))
+    if not linked:
         st.markdown(
             """
 <div style='text-align:center; padding:3rem; color:#aaa; font-size:1.3rem;'>
-👴 아직 부모님이 연결되지 않았어요.<br>
-위의 <b>부모님 연결</b> 버튼을 눌러 연결해주세요.
+    👴 아직 부모님이 연결되지 않았어요.<br>
+    위의 <b>부모님 연결</b> 버튼을 눌러서 연결해주세요.
 </div>
 """,
             unsafe_allow_html=True,
         )
         return
 
-    parent_names = [l.get("parent_name", "부모님") for l in linked.data]
-    parent_codes = [l.get("parent_kakao_id", "") for l in linked.data]
-
+    parent_names = [l.get("parent_name", "부모님") for l in linked]
     if len(parent_names) > 1:
         selected_idx = st.radio("부모님 선택", range(len(parent_names)), format_func=lambda i: parent_names[i], horizontal=True)
     else:
         selected_idx = 0
 
-    selected_parent_name = parent_names[selected_idx]
-    selected_parent_code = parent_codes[selected_idx]
+    selected = linked[selected_idx]
+    parent_name = selected.get("parent_name", "부모님")
+    parent_code = selected.get("parent_code", "")
+    parent_user_id = selected.get("parent_user_id", "")
 
-    st.markdown(f"### 👴 {selected_parent_name}님 사용 현황")
-    st.text_input("부모님용 웹앱 주소", value=get_parent_url(selected_parent_code))
+    st.markdown(f"### 👴 {parent_name}님 사용 현황")
+    st.caption(f"부모님 앱 주소: {get_parent_url(parent_code)}")
 
-    logs = load_logs(selected_parent_code)
-    logs_for_stats = [l for l in logs if l.get("question") != "코드발급"]
-
-    if not logs_for_stats:
+    logs = load_logs(parent_user_id, parent_code)
+    if not logs:
         st.markdown(
             """
 <div style='text-align:center; padding:3rem; color:#aaa; font-size:1.2rem;'>
-📱 아직 사용 기록이 없어요.<br>
-부모님이 웹앱에 사진을 올리면 여기에 표시됩니다.
+    📱 아직 사용 기록이 없어요.<br>
+    부모님이 이음이에서 사진을 올리면 여기에 표시됩니다.
 </div>
 """,
             unsafe_allow_html=True,
@@ -553,73 +414,111 @@ def show_dashboard():
     today = datetime.now().date()
     today_logs = []
     week_logs = []
-    image_logs = []
-
-    for log in logs_for_stats:
+    for log in logs:
         dt = safe_parse_datetime(log.get("created_at", ""))
-        if dt:
-            if dt.date() == today:
-                today_logs.append(log)
-            if dt.date() >= today - timedelta(days=7):
-                week_logs.append(log)
-        if log.get("has_image"):
-            image_logs.append(log)
+        if not dt:
+            continue
+        if dt.date() == today:
+            today_logs.append(log)
+        if dt.date() >= today - timedelta(days=7):
+            week_logs.append(log)
 
-    col1, col2, col3 = st.columns(3)
+    image_logs = [l for l in logs if l.get("has_image")]
+    folders: Dict[str, List[Dict[str, Any]]] = {}
+    for log in logs:
+        key = log.get("folder_key") or f"{log.get('category', '기타')}__{log.get('place_name', '미분류')}"
+        folders.setdefault(key, []).append(log)
+
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(f"""
-<div class='metric-card'>
-<p style='color:#888; font-size:1rem; margin:0;'>오늘 질문</p>
-<p style='color:#E8543A; font-size:2.5rem; font-weight:700; margin:0;'>{len(today_logs)}번</p>
-</div>
-""", unsafe_allow_html=True)
+        <div class='metric-card'><p style='color:#888; margin:0;'>오늘 질문</p>
+        <p style='color:#E8543A; font-size:2.3rem; font-weight:700; margin:0;'>{len(today_logs)}번</p></div>
+        """, unsafe_allow_html=True)
     with col2:
         st.markdown(f"""
-<div class='metric-card'>
-<p style='color:#888; font-size:1rem; margin:0;'>이번 주 사용</p>
-<p style='color:#E8543A; font-size:2.5rem; font-weight:700; margin:0;'>{len(week_logs)}번</p>
-</div>
-""", unsafe_allow_html=True)
+        <div class='metric-card'><p style='color:#888; margin:0;'>이번 주 사용</p>
+        <p style='color:#E8543A; font-size:2.3rem; font-weight:700; margin:0;'>{len(week_logs)}번</p></div>
+        """, unsafe_allow_html=True)
     with col3:
         st.markdown(f"""
-<div class='metric-card'>
-<p style='color:#888; font-size:1rem; margin:0;'>사진 질문</p>
-<p style='color:#E8543A; font-size:2.5rem; font-weight:700; margin:0;'>{len(image_logs)}번</p>
-</div>
-""", unsafe_allow_html=True)
+        <div class='metric-card'><p style='color:#888; margin:0;'>사진 질문</p>
+        <p style='color:#E8543A; font-size:2.3rem; font-weight:700; margin:0;'>{len(image_logs)}번</p></div>
+        """, unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"""
+        <div class='metric-card'><p style='color:#888; margin:0;'>기록 폴더</p>
+        <p style='color:#E8543A; font-size:2.3rem; font-weight:700; margin:0;'>{len(folders)}개</p></div>
+        """, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown("#### 📋 최근 사용 기록")
 
-    for log in logs_for_stats[:30]:
-        dt = safe_parse_datetime(log.get("created_at", ""))
-        time_str = dt.strftime("%m월 %d일 %H:%M") if dt else log.get("created_at", "")
-        icon = "📷" if log.get("has_image") else "💬"
-        question = log.get("question", "")
-        answer = log.get("answer", "")
-        answer_short = answer[:160] + "..." if len(answer) > 160 else answer
+    tab_summary, tab_folder, tab_recent = st.tabs(["📊 자주 어려워한 곳", "📁 장소별 기록", "📋 최근 기록"])
 
-        st.markdown(f"""
+    with tab_summary:
+        st.markdown("#### 부모님이 자주 어려워한 화면")
+        folder_rows = []
+        for key, items in folders.items():
+            sample = items[0]
+            folder_rows.append({
+                "분류": sample.get("category", "기타"),
+                "장소/앱": sample.get("place_name", "미분류"),
+                "질문 횟수": len(items),
+                "최근 질문": (items[0].get("created_at") or "")[:10],
+            })
+        df = pd.DataFrame(folder_rows).sort_values("질문 횟수", ascending=False)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+        top = folder_rows[0] if folder_rows else None
+        if top:
+            st.info(f"가장 많이 어려워한 곳은 **{top['분류']} > {top['장소/앱']}** 입니다.")
+
+    with tab_folder:
+        folder_options = []
+        for key, items in sorted(folders.items(), key=lambda x: len(x[1]), reverse=True):
+            sample = items[0]
+            label = f"📁 {sample.get('category', '기타')} > {sample.get('place_name', '미분류')} ({len(items)}회)"
+            folder_options.append((label, key))
+
+        selected_label = st.selectbox("폴더 선택", [x[0] for x in folder_options])
+        selected_key = dict(folder_options)[selected_label]
+        selected_logs = folders[selected_key]
+
+        for log in selected_logs:
+            title = log.get("short_title") or log.get("task_name") or "질문"
+            created = (log.get("created_at") or "")[:16].replace("T", " ")
+            with st.expander(f"{created} · {title}"):
+                st.markdown(f"**하려던 일**: {log.get('task_name', '')}")
+                st.markdown(f"**질문**: {log.get('question', '')}")
+                st.markdown("**AI 답변**")
+                st.write(log.get("answer", ""))
+
+    with tab_recent:
+        st.markdown("#### 최근 사용 기록")
+        for log in logs[:30]:
+            time_str = (log.get("created_at") or "")[:16].replace("T", " ")
+            icon = "📷" if log.get("has_image") else "💬"
+            category = log.get("category", "기타")
+            place = log.get("place_name", "미분류")
+            title = log.get("short_title") or log.get("task_name") or "질문"
+            answer = log.get("answer", "")
+            answer_short = answer[:130] + "..." if len(answer) > 130 else answer
+            st.markdown(
+                f"""
 <div class='log-card'>
-<p style='color:#888; font-size:0.9rem; margin:0 0 0.3rem;'>{icon} {time_str}</p>
-<p style='font-weight:600; margin:0 0 0.3rem;'>질문: {question}</p>
-<p style='color:#555; margin:0;'>답변: {answer_short}</p>
+    <p style='color:#888; font-size:0.9rem; margin:0 0 0.3rem;'>{icon} {time_str} · {category} &gt; {place}</p>
+    <p style='font-weight:700; margin:0 0 0.3rem;'>{title}</p>
+    <p style='margin:0 0 0.3rem;'>질문: {log.get('question', '')}</p>
+    <p style='color:#555; margin:0;'>답변: {answer_short}</p>
 </div>
-""", unsafe_allow_html=True)
-
-    if st.button("🔄 새로고침"):
-        st.cache_data.clear()
-        st.rerun()
-
-    with st.expander("엑셀로 보기"):
-        df = pd.DataFrame(logs_for_stats)
-        st.dataframe(df, use_container_width=True)
-
+""",
+                unsafe_allow_html=True,
+            )
 
 # =========================================================
 # 라우팅
 # =========================================================
-if st.session_state.user is None:
+if st.session_state.child_user is None:
     show_login()
 elif st.session_state.page == "link":
     show_link_parent()
