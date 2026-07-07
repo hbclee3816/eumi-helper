@@ -1,5 +1,4 @@
 import os
-import re
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -79,27 +78,6 @@ def safe_parse_datetime(value: str):
         return None
 
 
-def normalize_phone(phone: str) -> str:
-    """휴대폰 번호에서 숫자만 남기고, 국내 010 번호 형태로 정리합니다."""
-    digits = re.sub(r"\D", "", phone or "")
-
-    # +82 10-1234-5678 형태로 들어온 경우 01012345678로 변환
-    if digits.startswith("82") and len(digits) >= 11:
-        digits = "0" + digits[2:]
-
-    return digits
-
-
-def is_valid_phone(phone_digits: str) -> bool:
-    # MVP에서는 국내 휴대폰 010/011/016/017/018/019, 10~11자리 정도만 허용
-    return phone_digits.startswith("01") and len(phone_digits) in (10, 11)
-
-
-def phone_to_auth_email(phone_digits: str) -> str:
-    """Supabase Auth는 이메일 로그인을 쓰되, 화면에서는 휴대폰번호만 받습니다."""
-    return f"{phone_digits}@eumi.local"
-
-
 def get_parent_url(parent_code: str) -> str:
     if PARENT_APP_URL:
         return f"{PARENT_APP_URL}?code={parent_code}"
@@ -142,46 +120,34 @@ def show_login():
 
         with tab1:
             st.markdown("#### 자녀 계정으로 로그인하세요")
-            phone = st.text_input("휴대폰 번호", key="login_phone", placeholder="010-1234-5678")
+            email = st.text_input("이메일", key="login_email", placeholder="example@email.com")
             password = st.text_input("비밀번호", type="password", key="login_pw", placeholder="비밀번호 입력")
 
             if st.button("로그인", key="login_btn"):
-                phone_digits = normalize_phone(phone)
-
-                if not phone_digits or not password:
-                    st.error("휴대폰 번호와 비밀번호를 입력해주세요.")
-                elif not is_valid_phone(phone_digits):
-                    st.error("휴대폰 번호를 다시 확인해주세요. 예: 010-1234-5678")
+                if not email or not password:
+                    st.error("이메일과 비밀번호를 입력해주세요.")
                 else:
                     try:
                         res = supabase.auth.sign_in_with_password({
-                            "email": phone_to_auth_email(phone_digits),
+                            "email": email,
                             "password": password,
                         })
                         st.session_state.user = res.user
                         st.session_state.page = "dashboard"
                         st.rerun()
                     except Exception:
-                        st.error("휴대폰 번호 또는 비밀번호가 틀렸어요.")
+                        st.error("이메일 또는 비밀번호가 틀렸어요.")
 
         with tab2:
             st.markdown("#### 새 계정을 만드세요")
-            new_phone = st.text_input("휴대폰 번호", key="reg_phone", placeholder="010-1234-5678")
+            new_email = st.text_input("이메일", key="reg_email", placeholder="example@email.com")
             new_name = st.text_input("이름", key="reg_name", placeholder="홍길동")
             new_pw = st.text_input("비밀번호", type="password", key="reg_pw", placeholder="6자 이상")
             new_pw2 = st.text_input("비밀번호 확인", type="password", key="reg_pw2", placeholder="비밀번호 재입력")
-            st.markdown(
-                "<p style='color:#888; font-size:0.9rem;'>※ 현재는 문자 인증 없이 휴대폰 번호와 비밀번호로 가입합니다.</p>",
-                unsafe_allow_html=True,
-            )
 
             if st.button("회원가입", key="reg_btn"):
-                phone_digits = normalize_phone(new_phone)
-
-                if not phone_digits or not new_name or not new_pw:
+                if not new_email or not new_name or not new_pw:
                     st.error("모든 항목을 입력해주세요.")
-                elif not is_valid_phone(phone_digits):
-                    st.error("휴대폰 번호를 다시 확인해주세요. 예: 010-1234-5678")
                 elif new_pw != new_pw2:
                     st.error("비밀번호가 일치하지 않아요.")
                 elif len(new_pw) < 6:
@@ -189,23 +155,13 @@ def show_login():
                 else:
                     try:
                         supabase.auth.sign_up({
-                            "email": phone_to_auth_email(phone_digits),
+                            "email": new_email,
                             "password": new_pw,
-                            "options": {
-                                "data": {
-                                    "name": new_name,
-                                    "phone": phone_digits,
-                                    "login_type": "phone",
-                                }
-                            },
+                            "options": {"data": {"name": new_name}},
                         })
-                        st.success("✅ 회원가입 완료! 이제 휴대폰 번호와 비밀번호로 로그인해주세요.")
+                        st.success("✅ 회원가입 완료! 이메일 인증 후 로그인해주세요.")
                     except Exception as e:
-                        err = str(e)
-                        if "already" in err.lower() or "registered" in err.lower():
-                            st.error("이미 가입된 휴대폰 번호입니다. 로그인해주세요.")
-                        else:
-                            st.error(f"회원가입 실패: {e}")
+                        st.error(f"회원가입 실패: {e}")
 
 
 # =========================================================
