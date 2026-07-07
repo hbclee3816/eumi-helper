@@ -1,47 +1,82 @@
-# 이음이 웹앱 MVP
+# 이음이 웹앱
 
-카카오 오픈빌더 방식은 보류하고, 부모님이 웹주소에 접속해서 사진을 올리면 AI가 안내하는 방식으로 전환한 버전입니다.
+## 이번 버전 핵심
 
-## 파일 구성
+- 카카오 오픈빌더/챗봇 방식 중단
+- 부모님용 웹앱(app.py)과 자녀용 대시보드(dashboard.py) 분리
+- 부모님도 휴대폰 번호 + 비밀번호로 가입/로그인
+- 부모님 질문 기록을 계속 저장
+- AI가 질문을 자동 분류
+  - 큰 분류: 키오스크, 병원 앱, 은행 앱 등
+  - 장소/앱: 맥도날드, 코레일, 국민은행 등
+  - 하려는 일: 주문하기, 결제하기, 예매하기 등
+- 같은 장소/분류의 이전 기록을 찾아서 답변에 참고
+- 자녀는 부모님 연결 코드를 입력해서 사용 기록 확인
 
-- `app.py` : 부모님용 웹앱. 사진 업로드, AI 답변, 자녀 연결 코드 발급
-- `dashboard.py` : 자녀용 대시보드. 로그인, 부모님 연결, 사용 기록 확인
-- `requirements.txt` : 설치 패키지
-- `Procfile` : Render에서 Streamlit으로 실행할 때 사용
-- `.env.example` : 환경변수 예시
-- `.gitignore` : 비밀키 업로드 방지
-- `supabase_setup.sql` : Supabase 테이블/정책 예시
+## GitHub에 올릴 파일
 
-## 환경변수
+- app.py
+- dashboard.py
+- requirements.txt
+- Procfile
+- README.md
+- supabase_setup.sql
+- .env.example
+- .gitignore
+- .streamlit/config.toml
 
-Streamlit Cloud 또는 Render 환경변수에 아래를 넣으세요.
+## GitHub에 절대 올리면 안 되는 파일
 
-```text
-GEMINI_API_KEY
-SUPABASE_URL
-SUPABASE_KEY
-APP_URL
-PARENT_APP_URL
+- .env
+
+## Streamlit Secrets 필수값
+
+부모님용 app.py 앱과 자녀용 dashboard.py 앱 모두 아래 값을 넣는 것을 권장합니다.
+
+```toml
+GEMINI_API_KEY = "실제 Gemini API 키"
+SUPABASE_URL = "https://프로젝트.supabase.co"
+SUPABASE_KEY = "Supabase anon/publishable key"
+SUPABASE_SERVICE_ROLE_KEY = "Supabase service_role key"
+AUTH_SECRET = "긴 랜덤 문자열"
+APP_URL = "https://eumi-parent.streamlit.app"
+PARENT_APP_URL = "https://eumi-parent.streamlit.app"
 ```
 
-`APP_URL`과 `PARENT_APP_URL`은 부모님용 웹앱 주소입니다.
+중요: SUPABASE_SERVICE_ROLE_KEY는 GitHub에 올리면 안 됩니다. Streamlit Secrets에만 넣으세요.
 
-## 실행 방법
+## Supabase 설정
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
+1. Supabase > SQL Editor
+2. supabase_setup.sql 전체 실행
+3. 이번 버전은 Supabase Auth 이메일 회원가입을 사용하지 않습니다.
+4. 그래서 Email Provider / Phone Provider 설정은 회원가입 오류와 직접 관련이 없습니다.
 
-자녀 대시보드는 별도 앱으로 배포하거나 아래처럼 실행합니다.
+## 앱 구성
 
-```bash
-streamlit run dashboard.py
-```
+### 부모님용 앱
 
-## 운영 방향
+- Main file path: app.py
+- 부모님 회원가입/로그인
+- 사진 질문
+- 내 기록 보기
+- 자녀 연결 코드 보기
 
-1. 카카오톡 채널은 삭제하지 말고, 웹앱 링크 안내용으로만 사용합니다.
-2. 카카오 오픈빌더, FastAPI 웹훅, Render webhook 방식은 일단 중단합니다.
-3. 부모님 휴대폰 홈 화면에 이음이 웹앱 링크를 추가해서 사용합니다.
-4. 자녀는 대시보드에서 부모님 연결 코드를 입력해 사용 기록을 확인합니다.
+### 자녀용 앱
+
+- Main file path: dashboard.py
+- 자녀 회원가입/로그인
+- 부모님 코드 연결
+- 장소별 기록 보기
+- 자주 어려워한 화면 확인
+
+## 카카오 채널 사용법
+
+카카오 채널은 삭제하지 말고, 웹앱 링크 안내용으로만 사용합니다.
+
+예시 문구:
+
+이음이 이용하기  
+아래 주소를 눌러 화면 사진을 올려주세요.  
+AI가 다음에 무엇을 눌러야 하는지 쉽게 알려드립니다.  
+https://eumi-parent.streamlit.app
