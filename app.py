@@ -4,6 +4,7 @@ import tempfile
 from datetime import datetime
 
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 from dotenv import load_dotenv
 from google import genai
@@ -19,6 +20,71 @@ st.set_page_config(
     page_icon="🔗",
     layout="centered"
 )
+
+
+
+# =========================================================
+# Streamlit 단축키 오작동 방지
+# =========================================================
+def disable_streamlit_clear_cache_shortcut() -> None:
+    """Ctrl+C 복사 시 Streamlit의 Clear caches 창이 뜨지 않도록 막습니다."""
+    components.html(
+        """
+<script>
+(function () {
+  const parentWindow = window.parent;
+  const doc = parentWindow.document;
+
+  if (parentWindow.__eumiClearCacheGuardInstalled) return;
+  parentWindow.__eumiClearCacheGuardInstalled = true;
+
+  function closeClearCacheDialog() {
+    const dialogs = Array.from(doc.querySelectorAll('[role="dialog"], [aria-modal="true"]'));
+    dialogs.forEach(function (dialog) {
+      const text = dialog.innerText || '';
+      if (text.indexOf('Clear caches') === -1) return;
+
+      const buttons = Array.from(dialog.querySelectorAll('button'));
+      const cancelButton = buttons.find(function (btn) {
+        return (btn.innerText || '').trim().toLowerCase() === 'cancel';
+      });
+
+      if (cancelButton) {
+        cancelButton.click();
+        return;
+      }
+
+      const closeButton = buttons.find(function (btn) {
+        return (btn.getAttribute('aria-label') || '').toLowerCase().includes('close') ||
+               (btn.innerText || '').trim() === '×' ||
+               (btn.innerText || '').trim().toLowerCase() === 'x';
+      });
+      if (closeButton) closeButton.click();
+    });
+  }
+
+  doc.addEventListener('keydown', function (event) {
+    const key = (event.key || '').toLowerCase();
+    if ((event.ctrlKey || event.metaKey) && key === 'c') {
+      // 복사 기본 기능은 그대로 두고, Streamlit 단축키 처리만 막습니다.
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      setTimeout(closeClearCacheDialog, 0);
+      setTimeout(closeClearCacheDialog, 80);
+    }
+  }, true);
+
+  closeClearCacheDialog();
+  const observer = new MutationObserver(closeClearCacheDialog);
+  observer.observe(doc.body, { childList: true, subtree: true });
+})();
+</script>
+        """,
+        height=0,
+        width=0,
+    )
+
+disable_streamlit_clear_cache_shortcut()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
