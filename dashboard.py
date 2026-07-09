@@ -13,7 +13,7 @@ from common import (
     show_log_summary,
 )
 
-st.set_page_config(page_title="이음이 자녀 대시보드", page_icon="🔗", layout="wide")
+st.set_page_config(page_title="이음이 자녀용", page_icon="🔗", layout="centered")
 
 if "dashboard_user" not in st.session_state:
     st.session_state.dashboard_user = None
@@ -36,7 +36,7 @@ def render_child_action_buttons():
     st.markdown(
         """
 <div class='hero-card'>
-    <div class='small-note'><b>확인할 화면을 선택하세요.</b> 로그인 후에는 아래 버튼이 실제 화면 이동 버튼으로 작동합니다.</div>
+    <div class='small-note'><b>원하는 기능을 눌러주세요.</b> 로그인 후에는 아래 버튼이 실제 화면 이동 버튼으로 작동합니다.</div>
 </div>
 """,
         unsafe_allow_html=True,
@@ -56,7 +56,7 @@ def show_child_dashboard():
 
     user = st.session_state.dashboard_user
     apply_style(
-        "이음이 자녀 대시보드",
+        "이음이 자녀용",
         f"{user.get('name','사용자')}님, 부모님의 디지털 사용 기록을 확인하세요",
         theme="child",
         badge="자녀용",
@@ -64,7 +64,7 @@ def show_child_dashboard():
 
     render_child_action_buttons()
 
-    col_a, col_b = st.columns([4, 1])
+    col_a, col_b = st.columns([3, 1])
     with col_a:
         st.markdown(
             f"<div class='small-note'><b>내 번호:</b> {format_phone(user.get('phone',''))}</div>",
@@ -117,7 +117,7 @@ def show_child_dashboard():
 if st.session_state.dashboard_user is None:
     show_auth(
         "dashboard_user",
-        title="이음이 자녀 대시보드",
+        title="이음이 자녀용",
         subtitle="먼저 로그인하거나 처음 사용에서 가입해주세요",
         theme="child",
         badge="자녀용",
