@@ -343,7 +343,7 @@ def classify_and_answer(image,question,prev):
 def save_usage_log(uid,q,result,has_image=True):
     supabase.table('usage_logs').insert({'user_id':uid,'question':q,'answer':result.get('answer',''),'has_image':has_image,'category':result.get('category','기타'),'place_name':result.get('place_name','미분류'),'task_name':result.get('task_name','확인하기'),'short_title':result.get('short_title','화면 질문'),'folder_key':folder_key(result.get('category','기타'),result.get('place_name','미분류')),'created_at':datetime.now().isoformat()}).execute()
 def show_auth(session_key, title='이음이', subtitle='사진으로 도움받고, 기록을 가족과 함께 확인하세요', theme='parent', badge=''):
-    install_phone_input_guard(); install_clear_cache_shortcut_guard(); apply_style(title, subtitle, theme=theme, badge=badge)
+    install_phone_input_guard(); install_clear_cache_shortcut_guard(); apply_style(title, subtitle, theme=theme, badge=badge); render_landing_preview(theme)
     _,col,_=st.columns([.3,4.4,.3])
     with col:
         t1,t2=st.tabs(['🔐 로그인','📝 처음 사용'])
@@ -403,3 +403,64 @@ def family_management_ui(user,prefix='family'):
             with b:
                 if st.button('거절',key=f"reject_{l['id']}"): reject_link(l['id']); st.rerun()
 
+
+
+
+def render_landing_preview(theme="parent"):
+    """시안에 최대한 가깝게 보이는 부모용/자녀용 첫 화면 카드."""
+    if theme == "child":
+        css = """
+<style>
+.block-container{max-width:1180px!important;}
+.eumi-main-card{background:linear-gradient(135deg,#FDFEFF 0%,#EEF7FF 56%,#DFF1FF 100%);border:2px solid #CFE0F2;border-radius:28px;padding:1.5rem 1.6rem;margin:1rem auto 1.4rem;box-shadow:0 18px 45px rgba(9,61,120,.12);position:relative;overflow:hidden;}
+.eumi-main-card:before{content:"";position:absolute;width:260px;height:260px;right:-90px;bottom:-90px;border-radius:50%;background:rgba(255,255,255,.45)}
+.eumi-main-grid{display:grid;grid-template-columns:1.28fr .82fr;gap:1.1rem;align-items:center;position:relative;z-index:1}
+.eumi-badge{display:inline-flex;background:#0A3D78;color:#fff;border-radius:14px;padding:.35rem .75rem;font-size:1rem;font-weight:900;margin-bottom:.7rem}
+.eumi-card-title{font-size:2.45rem;font-weight:900;color:#0A3D78;letter-spacing:-.04em;margin:.15rem 0 .3rem}
+.eumi-headline{font-size:1.68rem;font-weight:900;color:#0F1C33;line-height:1.34;margin:.35rem 0}.eumi-copy{font-size:1.05rem;color:#536273;font-weight:650;line-height:1.65;margin:.3rem 0 1rem}.eumi-ill{background:#DCEFFF;border-radius:26px;min-height:215px;display:flex;align-items:center;justify-content:center;font-size:4.2rem}.eumi-note{text-align:center;color:#536273;font-size:1.02rem;font-weight:800;margin-top:.45rem}.eumi-action{display:flex;align-items:center;justify-content:space-between;border-radius:18px;padding:.82rem 1rem;margin:.62rem 0;font-size:1.25rem;font-weight:900;color:#fff;box-shadow:0 8px 18px rgba(0,0,0,.10)}.eumi-action .left{display:flex;gap:.75rem;align-items:center}.eumi-action .ico{width:2.4rem;height:2.4rem;display:flex;align-items:center;justify-content:center;border-radius:13px;background:rgba(255,255,255,.23)}.eumi-action.one{background:#0A3D78}.eumi-action.two{background:#2F7DB7}.eumi-action.three{background:#52B5BA}.eumi-arrow{font-size:1.8rem}@media(max-width:900px){.eumi-main-grid{grid-template-columns:1fr}.eumi-ill{min-height:130px;font-size:3rem}.eumi-card-title{font-size:2rem}}
+</style>
+"""
+        html = css + """
+<div class='eumi-main-card'>
+  <div class='eumi-main-grid'>
+    <div>
+      <div class='eumi-badge'>👤 자녀용</div>
+      <div class='eumi-card-title'>🔗 이음이 자녀 대시보드</div>
+      <div class='eumi-headline'>부모님의 디지털 사용 기록을<br>함께 확인하세요</div>
+      <div class='eumi-copy'>어디에서 자주 어려워하시는지 보고,<br>가족 연결도 관리할 수 있어요</div>
+      <div class='eumi-action one'><span class='left'><span class='ico'>📋</span>부모님 기록 보기</span><span class='eumi-arrow'>›</span></div>
+      <div class='eumi-action two'><span class='left'><span class='ico'>👨‍👩‍👧</span>가족 연결 관리</span><span class='eumi-arrow'>›</span></div>
+      <div class='eumi-action three'><span class='left'><span class='ico'>👤</span>내 기록 보기</span><span class='eumi-arrow'>›</span></div>
+    </div>
+    <div><div class='eumi-ill'>👨‍💻📊</div><div class='eumi-note'>기록 확인 · 가족 관리</div></div>
+  </div>
+</div>
+"""
+    else:
+        css = """
+<style>
+.block-container{max-width:1180px!important;}
+.eumi-main-card{background:linear-gradient(135deg,#FFFDF9 0%,#FFF4EA 54%,#FFE6D2 100%);border:2px solid #F2D6C7;border-radius:28px;padding:1.5rem 1.6rem;margin:1rem auto 1.4rem;box-shadow:0 18px 45px rgba(240,90,40,.13);position:relative;overflow:hidden;}
+.eumi-main-card:before{content:"";position:absolute;width:260px;height:260px;right:-90px;bottom:-90px;border-radius:50%;background:rgba(255,255,255,.45)}
+.eumi-main-card:after{content:"";position:absolute;width:190px;height:190px;left:-70px;top:110px;border-radius:50%;background:rgba(255,255,255,.35)}
+.eumi-main-grid{display:grid;grid-template-columns:1.28fr .82fr;gap:1.1rem;align-items:center;position:relative;z-index:1}
+.eumi-badge{display:inline-flex;background:#FF6B2C;color:#fff;border-radius:14px;padding:.35rem .75rem;font-size:1rem;font-weight:900;margin-bottom:.7rem}.eumi-card-title{font-size:2.45rem;font-weight:900;color:#F05A28;letter-spacing:-.04em;margin:.15rem 0 .3rem}.eumi-headline{font-size:1.68rem;font-weight:900;color:#2A1A12;line-height:1.34;margin:.35rem 0}.eumi-copy{font-size:1.05rem;color:#6B5C55;font-weight:650;line-height:1.65;margin:.3rem 0 1rem}.eumi-ill{background:#FFE6D7;border-radius:26px;min-height:215px;display:flex;align-items:center;justify-content:center;font-size:4.2rem}.eumi-note{text-align:center;color:#6B5C55;font-size:1.02rem;font-weight:800;margin-top:.45rem}.eumi-action{display:flex;align-items:center;justify-content:space-between;border-radius:18px;padding:.82rem 1rem;margin:.62rem 0;font-size:1.25rem;font-weight:900;color:#fff;box-shadow:0 8px 18px rgba(0,0,0,.10)}.eumi-action .left{display:flex;gap:.75rem;align-items:center}.eumi-action .ico{width:2.4rem;height:2.4rem;display:flex;align-items:center;justify-content:center;border-radius:13px;background:rgba(255,255,255,.25)}.eumi-action.one{background:#F05A28}.eumi-action.two{background:#FF9B5F}.eumi-action.three{background:#FFF1E6;color:#3A2117;border:1px solid #F2D6C7}.eumi-arrow{font-size:1.8rem}@media(max-width:900px){.eumi-main-grid{grid-template-columns:1fr}.eumi-ill{min-height:130px;font-size:3rem}.eumi-card-title{font-size:2rem}}
+</style>
+"""
+        html = css + """
+<div class='eumi-main-card'>
+  <div class='eumi-main-grid'>
+    <div>
+      <div class='eumi-badge'>👥 부모님용</div>
+      <div class='eumi-card-title'>🔗 이음이 부모님용</div>
+      <div class='eumi-headline'>어려운 화면,<br>사진 찍어서 물어보세요</div>
+      <div class='eumi-copy'>키오스크 · 병원 앱 · 은행 앱 · 예매 화면을 쉽게 도와드려요</div>
+      <div class='eumi-action one'><span class='left'><span class='ico'>📷</span>사진으로 물어보기</span><span class='eumi-arrow'>›</span></div>
+      <div class='eumi-action two'><span class='left'><span class='ico'>🕘</span>지난 기록 보기</span><span class='eumi-arrow'>›</span></div>
+      <div class='eumi-action three'><span class='left'><span class='ico'>👨‍👩‍👧</span>가족 연결하기</span><span class='eumi-arrow'>›</span></div>
+    </div>
+    <div><div class='eumi-ill'>👵👴📱</div><div class='eumi-note'>사진으로 도움받기</div></div>
+  </div>
+</div>
+"""
+    st.markdown(html, unsafe_allow_html=True)
