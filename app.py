@@ -28,7 +28,8 @@ def friendly_error_message(error: Exception) -> str:
     if "PGRST125" in msg or "Invalid path specified in request URL" in msg:
         return (
             "가족 연결 정보를 확인하는 중 문제가 생겼습니다. "
-            "앱을 새로고침한 뒤 다시 시도해주세요. 계속 나오면 관리자에게 알려주세요."
+            "회원가입이 아직 안 되어 있다면 「처음 사용」 탭에서 먼저 가입해주세요. "
+            "이미 가입한 번호라면 앱을 새로고침한 뒤 다시 시도해주세요."
         )
     if "JWT" in msg or "permission" in msg.lower() or "permission denied" in msg.lower():
         return "권한 설정을 확인해야 합니다. 관리자에게 알려주세요."
@@ -175,7 +176,7 @@ def create_user(phone,name,pw):
     return res.data[0]
 def login_user(phone,pw):
     res=supabase.table('eumi_users').select('*').eq('phone',phone).limit(1).execute()
-    if not res.data: raise ValueError('가입되지 않은 휴대폰 번호입니다.')
+    if not res.data: raise ValueError('아직 회원가입이 되어 있지 않은 번호입니다. 위의 「처음 사용」 탭에서 회원가입을 먼저 해주세요.')
     user=res.data[0]
     if user.get('password_hash')!=hash_password(phone,pw): raise ValueError('비밀번호가 틀렸습니다.')
     activate_pending_signup_links(user); return user
@@ -305,7 +306,7 @@ def show_auth(session_key,title='이음이'):
     with col:
         t1,t2=st.tabs(['🔐 로그인','📝 처음 사용'])
         with t1:
-            st.markdown('### 로그인'); phone=phone_input('휴대폰 번호',f'{session_key}_login_phone'); pw=st.text_input('비밀번호',type='password',key=f'{session_key}_login_pw')
+            st.markdown('### 로그인'); st.markdown("<div class='small-note'>처음 오신 분은 옆의 <b>처음 사용</b> 탭에서 회원가입을 먼저 해주세요.</div>", unsafe_allow_html=True); phone=phone_input('휴대폰 번호',f'{session_key}_login_phone'); pw=st.text_input('비밀번호',type='password',key=f'{session_key}_login_pw')
             if st.button('로그인',key=f'{session_key}_login_submit'):
                 try:
                     if len(phone)!=11: raise ValueError('휴대폰 번호 11자리를 입력해주세요.')
