@@ -9,6 +9,7 @@ from common import (
     install_phone_input_guard,
     load_logs_for_user,
     load_parents_i_help,
+    render_landing_preview,
     show_auth,
     show_log_summary,
 )
@@ -61,6 +62,10 @@ def show_child_dashboard():
         theme="child",
         badge="자녀용",
     )
+
+    # 부모용 화면처럼 자녀용도 시안형 안내 카드를 보여줍니다.
+    # 실제 이동은 아래 Streamlit 버튼이 담당합니다.
+    render_landing_preview("child")
 
     render_child_action_buttons()
 
