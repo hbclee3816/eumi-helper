@@ -347,7 +347,6 @@ def save_usage_log(uid,q,result,has_image=True):
     supabase.table('usage_logs').insert({'user_id':uid,'question':q,'answer':result.get('answer',''),'has_image':has_image,'category':result.get('category','기타'),'place_name':result.get('place_name','미분류'),'task_name':result.get('task_name','확인하기'),'short_title':result.get('short_title','화면 질문'),'folder_key':folder_key(result.get('category','기타'),result.get('place_name','미분류')),'created_at':datetime.now().isoformat()}).execute()
 def show_auth(session_key, title='이음이', subtitle='사진으로 도움받고, 기록을 가족과 함께 확인하세요', theme='parent', badge=''):
     install_phone_input_guard(); install_clear_cache_shortcut_guard(); apply_style(title, subtitle, theme=theme, badge=badge)
-    render_landing_preview(theme)
     _,col,_=st.columns([.3,4.4,.3])
     with col:
         t1,t2=st.tabs(['🔐 로그인','📝 처음 사용'])
@@ -468,3 +467,13 @@ def render_landing_preview(theme="parent"):
 </div>
 """
     st.markdown(html, unsafe_allow_html=True)
+
+
+# =========================================================
+# 화면 전환 버튼 설명
+# =========================================================
+def render_action_button_note() -> None:
+    st.markdown(
+        "<div class='small-note'>아래 큰 버튼을 누르면 해당 기능 화면으로 이동합니다.</div>",
+        unsafe_allow_html=True,
+    )
