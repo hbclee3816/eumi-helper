@@ -44,6 +44,66 @@ button[data-baseweb="tab"] {{ font-size:1.25rem !important; font-weight:800 !imp
 <div class="title-area"><div class="title-main">🔗 {title}</div><div class="title-sub">{sub}</div></div>
 ''', unsafe_allow_html=True)
 
+
+def install_clear_cache_shortcut_guard() -> None:
+    """Ctrl+C 복사 시 Streamlit의 Clear caches 단축키/팝업이 뜨지 않도록 막습니다."""
+    components.html(
+        r"""
+<script>
+(function () {
+  const doc = window.parent.document;
+  const win = window.parent;
+
+  if (win.__eumiClearCacheGuardInstalled) {
+    return;
+  }
+  win.__eumiClearCacheGuardInstalled = true;
+
+  function isCopyShortcut(event) {
+    const key = (event.key || "").toLowerCase();
+    return (event.ctrlKey || event.metaKey) && key === "c";
+  }
+
+  // 복사 기본 동작은 유지하고, Streamlit 내부 단축키 핸들러로 전파되는 것만 막습니다.
+  doc.addEventListener("keydown", function (event) {
+    if (isCopyShortcut(event)) {
+      event.stopImmediatePropagation();
+    }
+  }, true);
+
+  doc.addEventListener("keyup", function (event) {
+    if (isCopyShortcut(event)) {
+      event.stopImmediatePropagation();
+    }
+  }, true);
+
+  // 혹시 이미 Clear caches 팝업이 뜬 경우 자동으로 닫습니다.
+  function closeClearCacheDialog() {
+    const dialogs = Array.from(doc.querySelectorAll('[role="dialog"], div'));
+    for (const dialog of dialogs) {
+      const text = dialog.innerText || "";
+      if (text.includes("Clear caches") && text.includes("function caches")) {
+        const buttons = Array.from(dialog.querySelectorAll("button"));
+        const cancel = buttons.find(function (btn) {
+          return (btn.innerText || "").trim().toLowerCase() === "cancel";
+        });
+        const closeButton = buttons.find(function (btn) {
+          return (btn.innerText || "").trim() === "×" || (btn.getAttribute("aria-label") || "").toLowerCase().includes("close");
+        });
+        if (cancel) cancel.click();
+        else if (closeButton) closeButton.click();
+      }
+    }
+  }
+
+  setInterval(closeClearCacheDialog, 300);
+})();
+</script>
+        """,
+        height=0,
+        width=0,
+    )
+
 def install_phone_input_guard():
     components.html(r'''
 <script>
@@ -106,10 +166,34 @@ def upsert_family_link(caregiver_user_id,caree_user_id,caregiver_phone,caree_pho
     else: supabase.table('family_links').insert(payload).execute()
 
 def activate_pending_signup_links(user):
+    """가입 전 전화번호로 걸려 있던 가족 연결을 실제 사용자 ID와 연결합니다.
+
+    기존 코드의 .is_('컬럼','null') 필터가 Streamlit/Supabase 환경에서
+    PGRST125 Invalid path 오류를 만들 수 있어, status='pending_signup' 기준으로만
+    안전하게 업데이트합니다.
+    """
     try:
-        supabase.table('family_links').update({'caree_user_id':user['id'],'status':'pending','updated_at':datetime.now().isoformat()}).eq('caree_phone',user['phone']).is_('caree_user_id','null').execute()
-        supabase.table('family_links').update({'caregiver_user_id':user['id'],'status':'active','updated_at':datetime.now().isoformat()}).eq('caregiver_phone',user['phone']).is_('caregiver_user_id','null').execute()
-    except Exception: pass
+        now = datetime.now().isoformat()
+
+        # 누군가 이 사용자를 '부모님'으로 추가해둔 경우:
+        # 해당 사용자가 가입하면 승인 대기 상태로 바꿉니다.
+        supabase.table('family_links').update({
+            'caree_user_id': user['id'],
+            'status': 'pending',
+            'updated_at': now
+        }).eq('caree_phone', user['phone']).eq('status', 'pending_signup').execute()
+
+        # 이 사용자가 '자녀'로 등록되어 있었던 경우:
+        # 부모가 먼저 자녀 번호를 등록한 것이므로 가입 시 자동 연결합니다.
+        supabase.table('family_links').update({
+            'caregiver_user_id': user['id'],
+            'status': 'active',
+            'updated_at': now
+        }).eq('caregiver_phone', user['phone']).eq('status', 'pending_signup').execute()
+
+    except Exception:
+        # 로그인 자체를 막지 않기 위해 가족 연결 자동 업데이트 오류는 숨깁니다.
+        pass
 
 def add_parent_link(user,parent_phone,relation):
     if len(parent_phone)!=11: raise ValueError('부모님 휴대폰 번호 11자리를 입력해주세요.')
