@@ -306,21 +306,22 @@ def show_auth(session_key,title='이음이'):
     with col:
         t1,t2=st.tabs(['🔐 로그인','📝 처음 사용'])
         with t1:
-            st.markdown('### 로그인'); st.markdown("<div class='small-note'>처음 오신 분은 옆의 <b>처음 사용</b> 탭에서 회원가입을 먼저 해주세요.</div>", unsafe_allow_html=True); phone=phone_input('휴대폰 번호',f'{session_key}_login_phone'); pw=st.text_input('비밀번호',type='password',key=f'{session_key}_login_pw')
+            st.markdown('### 로그인'); st.markdown("<div class='small-note'>처음 오신 분은 옆의 <b>처음 사용</b> 탭에서 회원가입을 먼저 해주세요.</div>", unsafe_allow_html=True); phone=phone_input('휴대폰 번호',f'{session_key}_login_phone'); pw=st.text_input('비밀번호',key=f'{session_key}_login_pw',placeholder='예: 123456')
             if st.button('로그인',key=f'{session_key}_login_submit'):
                 try:
                     if len(phone)!=11: raise ValueError('휴대폰 번호 11자리를 입력해주세요.')
-                    if not pw: raise ValueError('비밀번호를 입력해주세요.')
-                    st.session_state[session_key]=login_user(phone,pw); st.rerun()
+                    pw_clean=(st.session_state.get(f'{session_key}_login_pw') or pw or '').strip()
+                    if not pw_clean: raise ValueError('비밀번호를 입력해주세요.')
+                    st.session_state[session_key]=login_user(phone,pw_clean); st.rerun()
                 except Exception as e: show_error(e)
         with t2:
-            st.markdown('### 처음 사용하는 분'); phone=phone_input('휴대폰 번호',f'{session_key}_join_phone'); name=st.text_input('이름',key=f'{session_key}_join_name'); pw=st.text_input('비밀번호',type='password',key=f'{session_key}_join_pw',placeholder='6자 이상'); pw2=st.text_input('비밀번호 확인',type='password',key=f'{session_key}_join_pw2')
+            st.markdown('### 처음 사용하는 분'); st.markdown("<div class='small-note'>테스트 단계에서는 비밀번호가 보이게 입력됩니다. 숫자 6자리 예: 123456</div>", unsafe_allow_html=True); phone=phone_input('휴대폰 번호',f'{session_key}_join_phone'); name=st.text_input('이름',key=f'{session_key}_join_name'); pw=st.text_input('비밀번호',key=f'{session_key}_join_pw',placeholder='예: 123456'); pw2=st.text_input('비밀번호 확인',key=f'{session_key}_join_pw2',placeholder='같은 비밀번호를 다시 입력')
             if st.button('계정 만들기',key=f'{session_key}_join_submit'):
                 try:
                     if len(phone)!=11: raise ValueError('휴대폰 번호 11자리를 입력해주세요.')
                     if not name.strip(): raise ValueError('이름을 입력해주세요.')
-                    pw_clean=(pw or '').strip()
-                    pw2_clean=(pw2 or '').strip()
+                    pw_clean=(st.session_state.get(f'{session_key}_join_pw') or pw or '').strip()
+                    pw2_clean=(st.session_state.get(f'{session_key}_join_pw2') or pw2 or '').strip()
                     if not pw_clean: raise ValueError('비밀번호를 입력해주세요.')
                     if not pw2_clean: raise ValueError('비밀번호 확인을 입력해주세요.')
                     if pw_clean!=pw2_clean: raise ValueError('비밀번호가 일치하지 않아요.')
