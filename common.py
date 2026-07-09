@@ -6,7 +6,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 from PIL import Image
 from dotenv import load_dotenv
-from google import genai
 from supabase import create_client
 
 load_dotenv()
@@ -329,6 +328,10 @@ def safe_json_loads(text):
     except Exception: return {}
 def classify_and_answer(image,question,prev):
     if not GEMINI_API_KEY: raise RuntimeError('GEMINI_API_KEY가 설정되어 있지 않습니다.')
+    try:
+        from google import genai
+    except Exception:
+        raise RuntimeError('AI 분석 패키지(google-genai)가 설치되지 않았습니다. requirements.txt를 확인해주세요.')
     client=genai.Client(api_key=GEMINI_API_KEY); tmp_path=None
     try:
         with tempfile.NamedTemporaryFile(delete=False,suffix='.jpg') as tmp: image.convert('RGB').save(tmp.name,format='JPEG'); tmp_path=tmp.name
@@ -343,7 +346,8 @@ def classify_and_answer(image,question,prev):
 def save_usage_log(uid,q,result,has_image=True):
     supabase.table('usage_logs').insert({'user_id':uid,'question':q,'answer':result.get('answer',''),'has_image':has_image,'category':result.get('category','기타'),'place_name':result.get('place_name','미분류'),'task_name':result.get('task_name','확인하기'),'short_title':result.get('short_title','화면 질문'),'folder_key':folder_key(result.get('category','기타'),result.get('place_name','미분류')),'created_at':datetime.now().isoformat()}).execute()
 def show_auth(session_key, title='이음이', subtitle='사진으로 도움받고, 기록을 가족과 함께 확인하세요', theme='parent', badge=''):
-    install_phone_input_guard(); install_clear_cache_shortcut_guard(); apply_style(title, subtitle, theme=theme, badge=badge); render_landing_preview(theme)
+    install_phone_input_guard(); install_clear_cache_shortcut_guard(); apply_style(title, subtitle, theme=theme, badge=badge)
+    render_landing_preview(theme)
     _,col,_=st.columns([.3,4.4,.3])
     with col:
         t1,t2=st.tabs(['🔐 로그인','📝 처음 사용'])
