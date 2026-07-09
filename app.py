@@ -21,6 +21,36 @@ if not SUPABASE_URL or not SUPABASE_APP_KEY:
     st.stop()
 supabase=create_client(SUPABASE_URL, SUPABASE_APP_KEY)
 
+
+def friendly_error_message(error: Exception) -> str:
+    """개발자용 영어 오류를 사용자용 한글 안내로 바꿉니다."""
+    msg = str(error)
+    if "PGRST125" in msg or "Invalid path specified in request URL" in msg:
+        return (
+            "가족 연결 정보를 확인하는 중 문제가 생겼습니다. "
+            "앱을 새로고침한 뒤 다시 시도해주세요. 계속 나오면 관리자에게 알려주세요."
+        )
+    if "JWT" in msg or "permission" in msg.lower() or "permission denied" in msg.lower():
+        return "권한 설정을 확인해야 합니다. 관리자에게 알려주세요."
+    if "relation" in msg.lower() and "does not exist" in msg.lower():
+        return "데이터베이스 테이블이 아직 준비되지 않았습니다. 관리자에게 알려주세요."
+    if "duplicate" in msg.lower() or "already" in msg.lower():
+        return "이미 등록된 정보입니다."
+    if "timeout" in msg.lower():
+        return "응답 시간이 길어졌습니다. 잠시 후 다시 시도해주세요."
+    if msg.strip():
+        return msg
+    return "알 수 없는 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+
+
+def show_error(error: Exception, prefix: str = "") -> None:
+    message = friendly_error_message(error)
+    if prefix:
+        st.error(f"{prefix}: {message}")
+    else:
+        st.error(message)
+
+
 def apply_style(title, sub):
     st.markdown(f'''
 <style>
@@ -46,63 +76,66 @@ button[data-baseweb="tab"] {{ font-size:1.25rem !important; font-weight:800 !imp
 
 
 def install_clear_cache_shortcut_guard() -> None:
-    """Ctrl+C 복사 시 Streamlit의 Clear caches 단축키/팝업이 뜨지 않도록 막습니다."""
+    """Ctrl+C 복사 시 Streamlit의 Clear caches 팝업이 뜨지 않도록 막습니다."""
     components.html(
         r"""
 <script>
 (function () {
-  const doc = window.parent.document;
-  const win = window.parent;
+  function install() {
+    const win = window.parent;
+    const doc = win.document;
 
-  if (win.__eumiClearCacheGuardInstalled) {
-    return;
-  }
-  win.__eumiClearCacheGuardInstalled = true;
+    if (win.__eumiClearCacheGuardInstalledV3) return;
+    win.__eumiClearCacheGuardInstalledV3 = true;
 
-  function isCopyShortcut(event) {
-    const key = (event.key || "").toLowerCase();
-    return (event.ctrlKey || event.metaKey) && key === "c";
-  }
+    function isCopyShortcut(event) {
+      const key = (event.key || "").toLowerCase();
+      return (event.ctrlKey || event.metaKey) && key === "c";
+    }
 
-  // 복사 기본 동작은 유지하고, Streamlit 내부 단축키 핸들러로 전파되는 것만 막습니다.
-  doc.addEventListener("keydown", function (event) {
-    if (isCopyShortcut(event)) {
+    function blockCopyPropagation(event) {
+      if (!isCopyShortcut(event)) return;
       event.stopImmediatePropagation();
     }
-  }, true);
 
-  doc.addEventListener("keyup", function (event) {
-    if (isCopyShortcut(event)) {
-      event.stopImmediatePropagation();
-    }
-  }, true);
+    ["keydown", "keypress", "keyup"].forEach(function (type) {
+      doc.addEventListener(type, blockCopyPropagation, true);
+      win.addEventListener(type, blockCopyPropagation, true);
+    });
 
-  // 혹시 이미 Clear caches 팝업이 뜬 경우 자동으로 닫습니다.
-  function closeClearCacheDialog() {
-    const dialogs = Array.from(doc.querySelectorAll('[role="dialog"], div'));
-    for (const dialog of dialogs) {
-      const text = dialog.innerText || "";
-      if (text.includes("Clear caches") && text.includes("function caches")) {
-        const buttons = Array.from(dialog.querySelectorAll("button"));
-        const cancel = buttons.find(function (btn) {
-          return (btn.innerText || "").trim().toLowerCase() === "cancel";
-        });
-        const closeButton = buttons.find(function (btn) {
-          return (btn.innerText || "").trim() === "×" || (btn.getAttribute("aria-label") || "").toLowerCase().includes("close");
-        });
-        if (cancel) cancel.click();
-        else if (closeButton) closeButton.click();
+    function closeClearCacheDialog() {
+      const nodes = Array.from(doc.querySelectorAll('[role="dialog"], [data-testid="stModal"], div'));
+      for (const node of nodes) {
+        const text = node.innerText || "";
+        if (text.includes("Clear caches") && text.includes("function caches")) {
+          const buttons = Array.from(node.querySelectorAll("button"));
+          const cancel = buttons.find(function (btn) {
+            return (btn.innerText || "").trim().toLowerCase() === "cancel";
+          });
+          const xButton = buttons.find(function (btn) {
+            const t = (btn.innerText || "").trim();
+            const aria = (btn.getAttribute("aria-label") || "").toLowerCase();
+            return t === "×" || aria.includes("close");
+          });
+          if (cancel) cancel.click();
+          else if (xButton) xButton.click();
+          node.style.display = "none";
+        }
       }
     }
+
+    closeClearCacheDialog();
+    setInterval(closeClearCacheDialog, 200);
   }
 
-  setInterval(closeClearCacheDialog, 300);
+  try { install(); } catch (e) {}
 })();
 </script>
         """,
         height=0,
         width=0,
     )
+
 
 def install_phone_input_guard():
     components.html(r'''
@@ -220,7 +253,7 @@ def get_user_name(uid, fallback=''):
     return (res.data[0].get('name') or format_phone(res.data[0].get('phone',''))) if res.data else (format_phone(fallback) if fallback else '가족')
 def load_logs_for_user(uid):
     try: return supabase.table('usage_logs').select('*').eq('user_id',uid).order('created_at',desc=True).limit(500).execute().data or []
-    except Exception as e: st.error(f'사용 기록을 불러오지 못했습니다: {e}'); return []
+    except Exception as e: show_error(e, '사용 기록을 불러오지 못했습니다'); return []
 def safe_dt(v):
     try: return datetime.fromisoformat((v or '').replace('Z','+00:00'))
     except Exception: return None
@@ -278,7 +311,7 @@ def show_auth(session_key,title='이음이'):
                     if len(phone)!=11: raise ValueError('휴대폰 번호 11자리를 입력해주세요.')
                     if not pw: raise ValueError('비밀번호를 입력해주세요.')
                     st.session_state[session_key]=login_user(phone,pw); st.rerun()
-                except Exception as e: st.error(str(e))
+                except Exception as e: show_error(e)
         with t2:
             st.markdown('### 처음 사용하는 분'); phone=phone_input('휴대폰 번호',f'{session_key}_join_phone'); name=st.text_input('이름',key=f'{session_key}_join_name'); pw=st.text_input('비밀번호',type='password',key=f'{session_key}_join_pw',placeholder='6자 이상'); pw2=st.text_input('비밀번호 확인',type='password',key=f'{session_key}_join_pw2')
             if st.button('계정 만들기',key=f'{session_key}_join_submit'):
@@ -293,7 +326,7 @@ def show_auth(session_key,title='이음이'):
                     # 테스트 단계에서는 Streamlit 입력값 유실 오류를 막기 위해 길이 검사는 완화하고,
                     # 실제 운영 전 결제/문자인증 단계에서 6자리 이상 정책을 다시 강화합니다.
                     st.session_state[session_key]=create_user(phone,name,pw_clean); st.rerun()
-                except Exception as e: st.error(f'회원가입 실패: {e}')
+                except Exception as e: show_error(e, '회원가입 실패')
 def family_management_ui(user,prefix='family'):
     install_phone_input_guard(); st.markdown('### 가족 관리'); st.markdown("<div class='guide-card'><b>부모님</b>은 내가 도와드릴 가족입니다.<br><b>자녀</b>는 내 기록을 함께 볼 가족입니다.</div>",unsafe_allow_html=True)
     ptab,ctab,rtab=st.tabs(['👵 부모님','👨‍👩‍👧 자녀','✅ 연결 요청'])
@@ -301,7 +334,7 @@ def family_management_ui(user,prefix='family'):
         st.markdown('#### 부모님 추가'); ph=phone_input('부모님 휴대폰 번호',f'{prefix}_parent_phone'); rel=relation_input(f'{prefix}_parent',['엄마','아빠','배우자','기타'])
         if st.button('부모님 연결 요청',key=f'{prefix}_add_parent'):
             try: st.success(add_parent_link(user,ph,rel)); st.rerun()
-            except Exception as e: st.error(str(e))
+            except Exception as e: show_error(e)
         st.markdown('#### 내가 도와주는 부모님')
         links=load_parents_i_help(user['id'])
         if not links: st.info('아직 연결된 부모님이 없습니다.')
@@ -310,7 +343,7 @@ def family_management_ui(user,prefix='family'):
         st.markdown('#### 자녀 추가'); ph=phone_input('자녀 휴대폰 번호',f'{prefix}_child_phone'); rel=relation_input(f'{prefix}_child',['아들','딸','배우자','기타'])
         if st.button('자녀 연결',key=f'{prefix}_add_child'):
             try: st.success(add_child_link(user,ph,rel)); st.rerun()
-            except Exception as e: st.error(str(e))
+            except Exception as e: show_error(e)
         st.markdown('#### 나를 도와주는 자녀')
         links=load_children_helping_me(user['id'])
         if not links: st.info('아직 연결된 자녀가 없습니다.')
@@ -347,7 +380,7 @@ def show_main():
                         res=classify_and_answer(img,q,load_logs_for_user(user['id'])); save_usage_log(user['id'],q,res,True)
                         st.markdown('#### 📣 AI 답변'); st.markdown(f"<div class='answer-card'>{res.get('answer')}</div>",unsafe_allow_html=True)
                         st.markdown(f"<div class='folder-card'><b>자동 분류</b><br>📁 {res.get('category')} &gt; {res.get('place_name')}<br>하려는 일: {res.get('task_name')}</div>",unsafe_allow_html=True)
-                    except Exception as e: st.error(f'오류가 발생했어요: {e}')
+                    except Exception as e: show_error(e, '오류가 발생했어요')
         else: st.markdown("<div class='guide-card'>먼저 사진을 올려주세요.</div>",unsafe_allow_html=True)
     with his: st.markdown('### 내가 물어본 기록'); show_log_summary(load_logs_for_user(user['id']))
     with fam: family_management_ui(user,'main_family')
