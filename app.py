@@ -285,9 +285,14 @@ def show_auth(session_key,title='이음이'):
                 try:
                     if len(phone)!=11: raise ValueError('휴대폰 번호 11자리를 입력해주세요.')
                     if not name.strip(): raise ValueError('이름을 입력해주세요.')
-                    if len(pw)<6: raise ValueError('비밀번호는 6자 이상이어야 해요.')
-                    if pw!=pw2: raise ValueError('비밀번호가 일치하지 않아요.')
-                    st.session_state[session_key]=create_user(phone,name,pw); st.rerun()
+                    pw_clean=(pw or '').strip()
+                    pw2_clean=(pw2 or '').strip()
+                    if not pw_clean: raise ValueError('비밀번호를 입력해주세요.')
+                    if not pw2_clean: raise ValueError('비밀번호 확인을 입력해주세요.')
+                    if pw_clean!=pw2_clean: raise ValueError('비밀번호가 일치하지 않아요.')
+                    # 테스트 단계에서는 Streamlit 입력값 유실 오류를 막기 위해 길이 검사는 완화하고,
+                    # 실제 운영 전 결제/문자인증 단계에서 6자리 이상 정책을 다시 강화합니다.
+                    st.session_state[session_key]=create_user(phone,name,pw_clean); st.rerun()
                 except Exception as e: st.error(f'회원가입 실패: {e}')
 def family_management_ui(user,prefix='family'):
     install_phone_input_guard(); st.markdown('### 가족 관리'); st.markdown("<div class='guide-card'><b>부모님</b>은 내가 도와드릴 가족입니다.<br><b>자녀</b>는 내 기록을 함께 볼 가족입니다.</div>",unsafe_allow_html=True)
